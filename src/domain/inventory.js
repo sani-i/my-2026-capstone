@@ -36,6 +36,15 @@ function assertQuantity(value) {
   return value;
 }
 
+function assertIsoDate(value, label) {
+  const str = assertNonEmptyString(value, label);
+  const ms = Date.parse(str);
+  if (Number.isNaN(ms)) {
+    fail("VALIDATION", `${label} must be a valid date`);
+  }
+  return str;
+}
+
 function getEvent(store, eventId) {
   const event = store.events.get(eventId);
   if (!event) fail("NOT_FOUND", `event not found: ${eventId}`);
@@ -54,15 +63,12 @@ function getBooking(store, bookingId) {
   return booking;
 }
 
+function tierRemaining(tier) {
+  return Math.max(0, tier.capacity - tier.sold);
+}
+
 /**
  * Create an in-memory store for the domain.
- * @returns {{
- *   events: Map<string, any>,
- *   tiers: Map<string, any>,
- *   bookings: Map<string, any>,
- *   bookingsByReference: Map<string, any>,
- *   waitlistsByTier: Map<string, Queue>
- * }}
  */
 export function createStore() {
   return {
@@ -75,18 +81,16 @@ export function createStore() {
 }
 
 /**
- * Create an event.
- * @param {ReturnType<typeof createStore>} store
- * @param {{ title: string, city?: string, venue?: string, startsAt?: string }} input
+ * Create an event as a draft. Not on the public list until published.
+ * S02: missing title/city or invalid date -> VALIDATION, nothing saved.
  */
 export function createEvent(store, input) {
   assertObject(store, "store");
   assertObject(input, "input");
   const title = assertNonEmptyString(input.title, "title");
-  const city = input.city === undefined ? "" : assertNonEmptyString(input.city, "city");
-  const venue = input.venue === undefined ? "" : assertNonEmptyString(input.venue, "venue");
-  const startsAt =
-    input.startsAt === undefined ? "" : assertNonEmptyString(input.startsAt, "startsAt");
+  const city = assertNonEmptyString(input.city, "city");
+  const venue = assertNonEmptyString(input.venue, "venue");
+  const startsAt = assertIsoDate(input.startsAt, "startsAt");
 
   const event = {
     id: newId(),
@@ -94,6 +98,7 @@ export function createEvent(store, input) {
     city,
     venue,
     startsAt,
+    status: "draft",
     tierIds: [],
   };
   store.events.set(event.id, event);
@@ -102,8 +107,7 @@ export function createEvent(store, input) {
 
 /**
  * Add a ticket tier to an event.
- * @param {ReturnType<typeof createStore>} store
- * @param {{ eventId: string, name: string, priceCents: number, capacity: number }} input
+ * S03: price must be whole number, capacity >= 1, missing event -> NOT_FOUND.
  */
 export function addTier(store, input) {
   assertObject(store, "store");
@@ -131,10 +135,76 @@ export function addTier(store, input) {
 }
 
 /**
- * Book 1-10 tickets from one tier.
+ * Publish an event. Publishing an event with no ticket tiers is INVALID_STATE.
+ */
+export function publishEvent(store, eventId) {
+  assertObject(store, "store");
+  const id = assertNonEmptyString(eventId, "eventId");
+  const event = getEvent(store, id);
+  if (event.tierIds.length === 0) {
+    fail("INVALID_STATE", "cannot publish an event with no ticket tiers");
+  }
+  event.status = "published";
+  return event;
+}
+
+/**
+ * Unpublish an event (back to draft).
+ */
+export function unpublishEvent(store, eventId) {
+  assertObject(store, "store");
+  const id = assertNonEmptyString(eventId, "eventId");
+  const event = getEvent(store, id);
+  event.status = "draft";
+  return event;
+}
+
+/**
+ * List event summaries. Drafts are hidden from the public list by default.
+ */
+export function listEventSummaries(store, { publishedOnly = true } = {}) {
+  assertObject(store, "store");
+  if (typeof publishedOnly !== "boolean") {
+    fail("VALIDATION", "publishedOnly must be a boolean");
+  }
+
+  const summaries = [];
+  for (const event of store.events.values()) {
+    if (publishedOnly && event.status !== "published") continue;
+    const tiers = event.tierIds
+      .map((tierId) => store.tiers.get(tierId))
+      .filter(Boolean)
+      .map((tier) => ({
+        id: tier.id,
+        name: tier.name,
+        priceCents: tier.priceCents,
+        capacity: tier.capacity,
+        sold: tier.sold,
+        remaining: tierRemaining(tier),
+      }));
+
+    const prices = tiers.map((t) => t.priceCents);
+    const cheapestPriceCents = prices.length > 0 ? Math.min(...prices) : null;
+    const totalRemaining = tiers.reduce((sum, t) => sum + t.remaining, 0);
+
+    summaries.push({
+      id: event.id,
+      title: event.title,
+      city: event.city,
+      venue: event.venue,
+      startsAt: event.startsAt,
+      status: event.status,
+      tiers,
+      cheapestPriceCents,
+      totalRemaining,
+    });
+  }
+  return summaries;
+}
+
+/**
+ * Book 1-10 tickets from one tier. Creates a pending booking.
  * If there are not enough seats, throws SOLD_OUT and changes nothing.
- * @param {ReturnType<typeof createStore>} store
- * @param {{ tierId: string, userName: string, quantity: number }} input
  */
 export function bookTickets(store, input) {
   assertObject(store, "store");
@@ -152,7 +222,6 @@ export function bookTickets(store, input) {
     );
   }
 
-  // All validation passed; mutate state.
   tier.sold += quantity;
   const booking = {
     id: newId(),
@@ -162,7 +231,7 @@ export function bookTickets(store, input) {
     userName,
     quantity,
     amountCents: tier.priceCents * quantity,
-    status: "confirmed",
+    status: "pending",
     createdAt: new Date().toISOString(),
   };
   store.bookings.set(booking.id, booking);
@@ -172,8 +241,6 @@ export function bookTickets(store, input) {
 
 /**
  * Cancel a booking and release its seats. Cancelling twice is an error.
- * @param {ReturnType<typeof createStore>} store
- * @param {string} bookingId
  */
 export function cancelBooking(store, bookingId) {
   assertObject(store, "store");
@@ -185,7 +252,7 @@ export function cancelBooking(store, bookingId) {
 
   const tier = getTier(store, booking.tierId);
   tier.sold -= booking.quantity;
-  if (tier.sold < 0) tier.sold = 0; // defensive; should not happen
+  if (tier.sold < 0) tier.sold = 0;
   booking.status = "cancelled";
   booking.cancelledAt = new Date().toISOString();
   return booking;
@@ -193,8 +260,6 @@ export function cancelBooking(store, bookingId) {
 
 /**
  * Find a booking by its reference code in O(1).
- * @param {ReturnType<typeof createStore>} store
- * @param {string} reference
  */
 export function findBookingByReference(store, reference) {
   assertObject(store, "store");
@@ -206,15 +271,13 @@ export function findBookingByReference(store, reference) {
 
 /**
  * Join the FIFO waitlist for a sold-out tier.
- * @param {ReturnType<typeof createStore>} store
- * @param {{ tierId: string, userName: string }} input
  */
 export function joinWaitlist(store, input) {
   assertObject(store, "store");
   assertObject(input, "input");
   const tierId = assertNonEmptyString(input.tierId, "tierId");
   const userName = assertNonEmptyString(input.userName, "userName");
-  getTier(store, tierId); // ensures tier exists
+  getTier(store, tierId);
 
   let queue = store.waitlistsByTier.get(tierId);
   if (!queue) {

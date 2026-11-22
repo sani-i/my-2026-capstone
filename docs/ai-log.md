@@ -13,14 +13,9 @@ Every time you give an AI tool a significant prompt, add an entry. Three lines e
 ## Build 2
 
 ### Prompt 1: Build 2 prompt (docs/build-2.md)
-- **What I asked:**
-- **What came back:**
-- **What was wrong (or "nothing"):**
-
-### Prompt 2:
-- **What I asked:**
-- **What came back:**
-- **What was wrong (or "nothing"):**
+- **What I asked:** Implement Build 2 from `docs/build-2.md`: stable `mergeSort` (no `Array.prototype.sort`, no mutation), `publishEvent`/`unpublishEvent`/`listEventSummaries` in inventory, pure `filterEvents`/`sortEvents`/`searchEvents` in `eventSearch.js`, node:test coverage for S02/S03/S04/S05/S06 and required cases, and add `npm test`.
+- **What came back:** Added `src/domain/sorting.js`, `src/domain/eventSearch.js`, updated `src/domain/inventory.js` (draft/published status, stricter S02 validation, publish/unpublish, event summaries, pending bookings per S06), added tests in `test/sorting.test.js`, `test/inventory.test.js`, `test/eventSearch.test.js`, and `npm test` script.
+- **What was wrong (or "nothing"):** One test I wrote initially misread S05 AC4 (I used different times on the same day but expected title tie order); the implementation was correct, I fixed the test to use same timestamps for the same-day tie case. I also drafted S04 acceptance criteria in `docs/build-2.md` because they were left for the class to write; they should be reviewed. `createEvent` now requires `title`, `city`, `venue`, and a valid `startsAt` date, and bookings are created as `pending` per S06.
 
 ## Build 3
 
