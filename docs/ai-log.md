@@ -20,9 +20,9 @@ Every time you give an AI tool a significant prompt, add an entry. Three lines e
 ## Build 3
 
 ### Prompt 1: Build 3 prompt (docs/build-3.md)
-- **What I asked:** Add the architecture diagrams, booking state machine, Node HTTP router/server, configuration, startup script, and tests.
-- **What came back:** A layered architecture document, explicit booking transitions, static-file HTTP server, `/health` route, startup configuration, and `node:test` coverage.
-- **What was wrong (or "nothing"):** The first server draft relied on an implicit response/request property for HEAD handling and had redundant error-status logic; both were simplified. Added a regression test proving static requests cannot escape `public/`.
+- **What I asked:** Implement Build 3 from `docs/build-3.md`: confirm `docs/architecture.md` diagrams, add booking state machine, tiny HTTP router/server on `node:http`, `/health`, static serving from `public/` with path-escape protection, JSON error shape, config/start scripts, and tests for all allowed/illegal transitions, router, and real HTTP `/health`.
+- **What came back:** Added `src/domain/bookingStateMachine.js` (`BOOKING_STATES`, `canTransition`, `assertTransition`, `getAllowedTransitions`, `INVALID_TRANSITION`), `src/http/router.js` (method+path with `:params`), `src/http/app.js` (node:http server, `/health`, JSON 404 for unknown `/api/*`, BAD_JSON 400, uniform error shape, safe static serving from `public/`), `src/config.js`, `src/server.js`, `public/index.html`, and tests in `test/bookingStateMachine.test.js`, `test/router.test.js`, `test/http.test.js`. Added `"start": "node src/server.js"`.
+- **What was wrong (or "nothing"):** `docs/architecture.md` already satisfied the requested diagrams/layer sentences; I kept it. I made JSON body parsing run before route matching for non-GET/HEAD JSON requests so bad JSON returns 400 even on unknown routes; this matches the prompt's "Bad JSON returns a JSON 400" rule. Static path escape is guarded by resolving against `publicDir` and rejecting paths outside it.
 
 ## Build 4
 
