@@ -7,12 +7,9 @@ create, publish, book, pay. Start the server first:
 npm start          # listens on http://localhost:3000
 ```
 
-The full reference, where you can also try each call, is at http://localhost:3000/docs.
-
-Since Build 5 the data is stored in SQLite (`data/ticketing.db`), so it survives
-a restart. Run `npm run seed` once for a few sample events, or delete the
-`data/` folder to start empty. Ids and booking references are new for every
-event and booking: copy them from each response into the variables below.
+The API keeps its data in memory for Build 4, so restarting the server clears it.
+Ids and booking references are new for every event and booking: copy them from
+each response into the variables below.
 
 Until Build 7 adds login, the caller says who they are with the `x-user-id`
 header. Calls that change data need it.
@@ -27,7 +24,7 @@ Every error has the same shape:
 
 | Code | Status | When |
 |---|---|---|
-| `VALIDATION`, `INVALID_JSON` | 400 | The input is missing or wrong |
+| `VALIDATION`, `BAD_JSON` | 400 | The input is missing or wrong or JSON is invalid |
 | `UNAUTHENTICATED` | 401 | No `x-user-id` header |
 | `PAYMENT_DECLINED` | 402 | The mock card was declined. The booking stays pending |
 | `FORBIDDEN` | 403 | Not your event or not your booking |

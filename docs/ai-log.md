@@ -27,10 +27,10 @@ Every time you give an AI tool a significant prompt, add an entry. Three lines e
 ## Build 4
 
 ### Prompt 1: Build 4 prompt (docs/build-4.md)
-- **What I asked:** The Build 4 prompt: an in-memory repository, event and booking services, a mock payment gateway, the API routes, `docs/api-examples.md` and API tests that start the real server.
-- **What came back:** `src/repositories/memory.js`, `src/services/eventService.js`, `src/services/bookingService.js`, `src/lib/mockPaymentGateway.js`, `src/http/routes.js`, wiring in `src/server.js`, an error-code-to-status map in `src/http/app.js`, `docs/api-examples.md` and `test/api.test.js`.
-- **What was wrong (or "nothing"):** In the Build 3 code, every DomainError came back as 400, so `SOLD_OUT` and `NOT_FOUND` would have had the wrong status; added one code-to-status map in `app.js`. The validation helpers lived privately inside `inventory.js`, so reusing them meant moving them to `src/domain/validation.js` rather than copying. Known gap left on purpose: two bookings at the same moment can both take the last seat (Build 5). *(My own review: add what you find when you read the code.)*
-- **Rules I was unsure about:** whether `venue` is required (kept optional, as in Build 2); whether a stranger paying someone else's booking should get 403 or 404 (chose 403 `FORBIDDEN`); added `unpublish`, `GET /api/events/:id` and `GET /api/bookings/:reference`, which the prompt did not list but S04 and the curl examples need.
+- **What I asked:** Implement Build 4 from `docs/build-4.md`: in-memory repository (async events/tiers/bookings), event/booking services reusing domain rules, mock payment gateway, REST routes, update `docs/api-examples.md`, and API tests starting the real server on a free port.
+- **What came back:** `src/repositories/memory.js`, `src/services/eventService.js`, `src/services/bookingService.js`, `src/lib/mockPaymentGateway.js`, `src/http/routes.js`, wired `src/server.js` and `src/http/app.js` (error-code-to-status map, route registration, uniform error shape), updated `docs/api-examples.md`, and added `test/api.test.js`.
+- **What was wrong (or "nothing"):** Initial route handlers called `sendJson(status, body)` using the app helper signature `(res, status, body)`, causing 500 `ERR_INVALID_ARG_TYPE`; fixed by using `ctx.sendJson(status, body)`. I kept error mapping in `app.js` so DomainError codes map to the documented HTTP statuses (400/401/402/403/404/409). Known gap left on purpose: in-memory booking is not atomic across concurrent requests (Build 5).
+- **Rules I was unsure about:** `venue` treated as required (matches S02). Paying/viewing/cancelling another user's booking returns 403 `FORBIDDEN`. Added `POST /api/events/:id/unpublish`, `GET /api/events/:id`, and `GET /api/bookings/:reference` to support the documented API examples.
 
 ## Build 5
 

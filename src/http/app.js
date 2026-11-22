@@ -15,6 +15,19 @@ const MIME_TYPES = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+const ERROR_STATUS = {
+  VALIDATION: 400,
+  INVALID_JSON: 400,
+  BAD_JSON: 400,
+  UNAUTHENTICATED: 401,
+  PAYMENT_DECLINED: 402,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  SOLD_OUT: 409,
+  INVALID_STATE: 409,
+  INVALID_TRANSITION: 409,
+};
+
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -100,12 +113,16 @@ async function serveStatic(req, res, publicDir) {
   }
 }
 
-export function createApp({ publicDir = path.resolve("public") } = {}) {
+export function createApp({ publicDir = path.resolve("public"), registerRoutes } = {}) {
   const router = createRouter();
 
   router.add("GET", "/health", async (_req, res) => {
     sendJson(res, 200, { status: "ok" });
   });
+
+  if (typeof registerRoutes === "function") {
+    registerRoutes(router, { sendJson, sendError });
+  }
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -130,6 +147,8 @@ export function createApp({ publicDir = path.resolve("public") } = {}) {
           query: url.searchParams,
           body,
           url,
+          sendJson: (status, payload) => sendJson(res, status, payload),
+          sendError: (status, code, message) => sendError(res, status, code, message),
         });
         return;
       }
@@ -144,9 +163,8 @@ export function createApp({ publicDir = path.resolve("public") } = {}) {
 
       sendError(res, 404, "NOT_FOUND", "Not found");
     } catch (err) {
-      // Never leak stack traces to client
-      const status = Number.isInteger(err?.status) ? err.status : 500;
       const code = typeof err?.code === "string" ? err.code : "INTERNAL_ERROR";
+      const status = ERROR_STATUS[code] ?? (Number.isInteger(err?.status) ? err.status : 500);
       const message = status >= 500 ? "Internal server error" : String(err?.message || "Error");
       sendError(res, status, code, message);
     }
