@@ -3,10 +3,54 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Event Ticketing</title>
+    <title>Event Ticketing - Browse Events</title>
+    <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
-    <h1>Event Ticketing</h1>
-    <p>Build 3 server skeleton is running.</p>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="/index.html">Event Ticketing</a>
+        <nav aria-label="Main navigation">
+          <a href="/index.html">Events</a>
+        </nav>
+      </div>
+    </header>
+    <main class="container">
+      <section aria-labelledby="browse-title">
+        <h1 id="browse-title">Browse events</h1>
+        <p class="muted">Find published events, compare tiers, and book tickets.</p>
+
+        <form id="filters-form" class="filters" aria-label="Event filters">
+          <div class="field">
+            <label for="q">Search</label>
+            <input id="q" name="q" type="search" placeholder="Title or venue" />
+          </div>
+          <div class="field">
+            <label for="city">City</label>
+            <input id="city" name="city" type="text" placeholder="e.g. Lagos" />
+          </div>
+          <div class="field">
+            <label for="maxPriceCents">Max price (cents)</label>
+            <input id="maxPriceCents" name="maxPriceCents" type="number" min="0" step="1" inputmode="numeric" />
+          </div>
+          <div class="field">
+            <label for="sort">Sort by</label>
+            <select id="sort" name="sort">
+              <option value="date">Date (earliest first)</option>
+              <option value="price">Price (cheapest first)</option>
+              <option value="availability">Availability (most seats)</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button type="submit">Apply filters</button>
+            <button type="button" id="reset-filters" class="secondary">Reset</button>
+          </div>
+        </form>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="events-list" class="events-grid" aria-live="polite"></div>
+      </section>
+    </main>
+    <script type="module" src="/js/pages/home.js"></script>
   </body>
 </html>

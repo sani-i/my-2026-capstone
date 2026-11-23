@@ -44,3 +44,10 @@ Every time you give an AI tool a significant prompt, add an entry. Three lines e
 - **What came back:** `reserveSeats`/`releaseSeats` in sqlite and memory repos; `bookingService.bookTickets` uses atomic `reserveSeats` and releases on booking-create failure; `cancelBooking` uses `releaseSeats`; oversell test passes; demo shows before 50/0/1/1/50 bookings vs after 1/49/1/1/1 booking.
 - **Why a lock variable or a second check does not work:** A second check still reads stale state because another request can read before any write commits; checking twice narrows but does not eliminate the race. A lock variable is process-local, so another process or server instance bypasses it, and a crash/exception before unlock can block all future bookings.
 - **What was wrong (or "nothing"):** Added a `releaseSeats` best-effort catch when booking creation fails after reserving seats. Known gap for Build 8: concurrent cancel/refund flows must release seats exactly once.
+
+## Build 6
+
+### Prompt 1: Build 6 prompt (docs/build-6.md)
+- **What I asked:** Implement Build 6 frontend in plain HTML/CSS/JS ES modules (no framework/build step): browse/search/filter/sort events, event detail with tiers and quantity picker, checkout with countdown and mock card payment, mock data/API layer matching real API shape, `el()` DOM helper with no innerHTML for data.
+- **What came back:** `public/index.html`, `public/event.html`, `public/css/styles.css`, `public/js/ui.js` (`el`, `clear`, `formatCents`), `public/js/mockData.js`, `public/js/api.js` (`listEvents`, `getEvent`, `createBooking`, `pay`), `public/js/pages/home.js`, `public/js/pages/event.js`. Mock bookings include 10-minute hold and `tok_success`/`tok_declined` handling.
+- **What was wrong (or "nothing"):** The mock `api.js` keeps state in module memory only (resets on page reload), which is acceptable for Build 6 mock-data scope. Countdown expiry disables pay and asks user to book again; declined card shows error and allows retry. I kept all data access behind `api.js` and used `textContent`/DOM nodes (no innerHTML for data).

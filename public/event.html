@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Ticketing - Event</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="/index.html">Event Ticketing</a>
+        <nav aria-label="Main navigation">
+          <a href="/index.html">Events</a>
+        </nav>
+      </div>
+    </header>
+    <main class="container">
+      <p><a href="/index.html">&larr; Back to events</a></p>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <section id="event-detail" aria-labelledby="event-title"></section>
+
+      <section id="checkout-section" class="card hidden" aria-labelledby="checkout-title">
+        <h2 id="checkout-title">Checkout</h2>
+        <div id="checkout-summary"></div>
+        <p id="countdown" class="countdown" aria-live="polite"></p>
+        <form id="payment-form" novalidate>
+          <div class="field">
+            <label for="paymentToken">Mock card token</label>
+            <select id="paymentToken" name="paymentToken">
+              <option value="tok_success">tok_success (approved)</option>
+              <option value="tok_declined">tok_declined (declined)</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button type="submit" id="pay-btn">Pay now</button>
+          </div>
+        </form>
+        <div id="payment-status" class="status" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+    <script type="module" src="/js/pages/event.js"></script>
+  </body>
+</html>
