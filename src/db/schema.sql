@@ -4,8 +4,10 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL DEFAULT '',
-  role TEXT NOT NULL DEFAULT ''
+  role TEXT NOT NULL DEFAULT '',
+  password_hash TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email <> '';
 
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,

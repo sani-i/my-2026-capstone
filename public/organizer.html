@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Ticketing - Organizer dashboard</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="/index.html">Event Ticketing</a>
+        <nav aria-label="Main navigation">
+          <a href="/index.html">Events</a>
+          <a href="/tickets.html">My tickets</a>
+          <a href="/organizer.html">Organizer</a>
+          <span id="nav-auth" class="nav-auth"></span>
+        </nav>
+      </div>
+    </header>
+    <main class="container">
+      <h1>Organizer dashboard</h1>
+      <p class="muted">Create events, add ticket tiers and publish them. Only your own events appear here.</p>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+
+      <section class="card" aria-labelledby="create-event-heading">
+        <h2 id="create-event-heading">New event</h2>
+        <form id="event-form" novalidate>
+          <div class="field">
+            <label for="title">Title</label>
+            <input id="title" name="title" type="text" required />
+          </div>
+          <div class="field">
+            <label for="city">City</label>
+            <input id="city" name="city" type="text" required />
+          </div>
+          <div class="field">
+            <label for="venue">Venue</label>
+            <input id="venue" name="venue" type="text" required />
+          </div>
+          <div class="field">
+            <label for="startsAt">Starts at</label>
+            <input id="startsAt" name="startsAt" type="datetime-local" required />
+          </div>
+          <div class="actions"><button type="submit" id="create-event-btn">Create event</button></div>
+        </form>
+      </section>
+
+      <h2>My events</h2>
+      <div id="events-list" class="events-grid" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/js/pages/organizer.js"></script>
+    <script type="module" src="/js/nav.js"></script>
+  </body>
+</html>

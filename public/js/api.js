@@ -1,167 +1,130 @@
-import { getMockEvents } from "./mockData.js";
+import { getToken, clearSession } from "./session.js";
 
-let events = getMockEvents();
-const bookings = new Map(); // reference -> booking
+const API_BASE = "/api";
 
-function clone(v) {
-  return structuredClone(v);
-}
-
-function normalize(str) {
-  return String(str || "").toLowerCase().trim();
-}
-
-function summarizeEvent(event) {
-  const tiers = event.tiers.map((t) => ({ ...t }));
-  const prices = tiers.map((t) => t.priceCents);
-  const cheapestPriceCents = prices.length ? Math.min(...prices) : null;
-  const totalRemaining = tiers.reduce((sum, t) => sum + (t.seatsLeft ?? 0), 0);
-  return { ...event, tiers, cheapestPriceCents, totalRemaining };
-}
-
-function makeReference() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "BK-";
-  for (let i = 0; i < 8; i += 1) {
-    if (i === 4) out += "-";
-    out += chars[Math.floor(Math.random() * chars.length)];
+/**
+ * The only place in the frontend that talks to the server.
+ * Every protected call sends Authorization: Bearer <token>.
+ */
+async function request(path, { method = "GET", body, auth = false } = {}) {
+  const headers = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (auth) {
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
   }
-  return out;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    data = undefined;
+  }
+
+  if (!res.ok) {
+    if (res.status === 401 && auth) clearSession();
+    const err = new Error(data?.error?.message || `Request failed (${res.status})`);
+    err.code = data?.error?.code || "REQUEST_FAILED";
+    err.status = res.status;
+    throw err;
+  }
+  return data;
 }
 
+function queryString(params) {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || String(value) === "") continue;
+    qs.set(key, String(value));
+  }
+  const str = qs.toString();
+  return str ? `?${str}` : "";
+}
+
+// --- auth ---
+export function signup(input) {
+  return request("/auth/signup", { method: "POST", body: input });
+}
+
+export function login(input) {
+  return request("/auth/login", { method: "POST", body: input });
+}
+
+export function me() {
+  return request("/auth/me", { auth: true });
+}
+
+// --- public browsing ---
 export async function listEvents(params = {}) {
-  let list = events.filter((e) => e.status === "published").map(summarizeEvent);
-
-  const q = normalize(params.q);
-  const city = normalize(params.city);
-  const maxPriceCents = params.maxPriceCents;
-  const sort = params.sort || "date";
-
-  if (q) {
-    list = list.filter((e) => normalize(e.title).includes(q) || normalize(e.venue).includes(q));
-  }
-  if (city) {
-    list = list.filter((e) => normalize(e.city) === city);
-  }
-  if (maxPriceCents !== undefined && maxPriceCents !== "" && maxPriceCents !== null) {
-    const max = Number(maxPriceCents);
-    if (Number.isFinite(max)) {
-      list = list.filter((e) => e.cheapestPriceCents !== null && e.cheapestPriceCents <= max);
-    }
-  }
-
-  if (sort === "price") {
-    list.sort((a, b) => {
-      const ap = a.cheapestPriceCents ?? Number.POSITIVE_INFINITY;
-      const bp = b.cheapestPriceCents ?? Number.POSITIVE_INFINITY;
-      if (ap !== bp) return ap - bp;
-      return a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
-    });
-  } else if (sort === "availability") {
-    list.sort((a, b) => {
-      if (a.totalRemaining !== b.totalRemaining) return b.totalRemaining - a.totalRemaining;
-      return a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
-    });
-  } else {
-    list.sort((a, b) => {
-      const ad = Date.parse(a.startsAt);
-      const bd = Date.parse(b.startsAt);
-      if (ad !== bd) return ad - bd;
-      return a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
-    });
-  }
-
-  return { events: clone(list) };
+  return request(`/events${queryString(params)}`);
 }
 
-export async function getEvent(id) {
-  const event = events.find((e) => e.id === id);
-  if (!event) {
-    const err = new Error("Event not found");
-    err.code = "NOT_FOUND";
-    throw err;
-  }
-  return clone(summarizeEvent(event));
+export function getEvent(id) {
+  return request(`/events/${encodeURIComponent(id)}`);
 }
 
-export async function createBooking({ tierId, quantity }) {
-  const qty = Number(quantity);
-  if (!Number.isInteger(qty) || qty < 1 || qty > 10) {
-    const err = new Error("quantity must be an integer between 1 and 10");
-    err.code = "VALIDATION";
-    throw err;
-  }
-
-  let foundTier;
-  let foundEvent;
-  for (const e of events) {
-    const t = e.tiers.find((x) => x.id === tierId);
-    if (t) { foundTier = t; foundEvent = e; break; }
-  }
-  if (!foundTier || !foundEvent) {
-    const err = new Error("Tier not found");
-    err.code = "NOT_FOUND";
-    throw err;
-  }
-  if (qty > foundTier.seatsLeft) {
-    const err = new Error(`Only ${foundTier.seatsLeft} ticket(s) left in ${foundTier.name}`);
-    err.code = "SOLD_OUT";
-    throw err;
-  }
-
-  foundTier.seatsLeft -= qty;
-  foundTier.sold += qty;
-
-  const now = Date.now();
-  const booking = {
-    id: `book-${Math.random().toString(36).slice(2, 10)}`,
-    reference: makeReference(),
-    eventId: foundEvent.id,
-    tierId: foundTier.id,
-    userId: "demo-user",
-    quantity: qty,
-    amountCents: foundTier.priceCents * qty,
-    status: "pending",
-    createdAt: new Date(now).toISOString(),
-    holdExpiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
-  };
-  bookings.set(booking.reference, booking);
-  return clone(booking);
+// --- attendee ---
+export function createBooking(input) {
+  return request("/bookings", { method: "POST", body: input, auth: true });
 }
 
-export async function pay({ reference, paymentToken }) {
-  const booking = bookings.get(reference);
-  if (!booking) {
-    const err = new Error("Booking not found");
-    err.code = "NOT_FOUND";
-    throw err;
-  }
-  if (booking.status === "paid") {
-    const err = new Error("Booking is already paid");
-    err.code = "INVALID_TRANSITION";
-    throw err;
-  }
-  if (booking.status !== "pending") {
-    const err = new Error("Invalid booking state");
-    err.code = "INVALID_TRANSITION";
-    throw err;
-  }
-  if (booking.holdExpiresAt && Date.parse(booking.holdExpiresAt) < Date.now()) {
-    const err = new Error("Booking hold expired");
-    err.code = "INVALID_STATE";
-    throw err;
-  }
-  if (paymentToken === "tok_declined") {
-    const err = new Error("Card declined");
-    err.code = "PAYMENT_DECLINED";
-    throw err;
-  }
-  if (paymentToken !== "tok_success") {
-    const err = new Error("Card declined");
-    err.code = "PAYMENT_DECLINED";
-    throw err;
-  }
-  booking.status = "paid";
-  booking.paidAt = new Date().toISOString();
-  return clone(booking);
+export async function listMyBookings() {
+  return request("/bookings", { auth: true });
+}
+
+export function getBooking(reference) {
+  return request(`/bookings/${encodeURIComponent(reference)}`, { auth: true });
+}
+
+export function pay({ reference, paymentToken }) {
+  return request(`/bookings/${encodeURIComponent(reference)}/pay`, {
+    method: "POST",
+    body: { paymentToken },
+    auth: true,
+  });
+}
+
+export function cancelBooking(reference) {
+  return request(`/bookings/${encodeURIComponent(reference)}/cancel`, {
+    method: "POST",
+    auth: true,
+  });
+}
+
+// --- organizer ---
+export function createEvent(input) {
+  return request("/events", { method: "POST", body: input, auth: true });
+}
+
+export async function listMyEvents() {
+  return request("/events/mine", { auth: true });
+}
+
+export function addTier(eventId, input) {
+  return request(`/events/${encodeURIComponent(eventId)}/tiers`, {
+    method: "POST",
+    body: input,
+    auth: true,
+  });
+}
+
+export function publishEvent(eventId) {
+  return request(`/events/${encodeURIComponent(eventId)}/publish`, {
+    method: "POST",
+    auth: true,
+  });
+}
+
+export function unpublishEvent(eventId) {
+  return request(`/events/${encodeURIComponent(eventId)}/unpublish`, {
+    method: "POST",
+    auth: true,
+  });
 }

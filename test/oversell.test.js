@@ -46,7 +46,7 @@ test("50 simultaneous bookings for 1 seat give exactly 1 success and 49 SOLD_OUT
 
     const attempts = Array.from({ length: 50 }, (_, i) =>
       service
-        .bookTickets({ tierId: tier.id, quantity: 1 }, `user-${i}`)
+        .bookTickets({ tierId: tier.id, quantity: 1 }, { id: `user-${i}`, role: "attendee" })
         .then((booking) => ({ ok: true, booking }))
         .catch((err) => ({ ok: false, code: err.code })),
     );

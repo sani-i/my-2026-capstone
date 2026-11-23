@@ -80,7 +80,7 @@ async function afterDemo() {
 
   const attempts = Array.from({ length: 50 }, (_, i) =>
     service
-      .bookTickets({ tierId: tier.id, quantity: 1 }, `user-${i}`)
+      .bookTickets({ tierId: tier.id, quantity: 1 }, { id: `user-${i}`, role: "attendee" })
       .then(() => ({ ok: true }))
       .catch((err) => ({ ok: false, code: err.code })),
   );

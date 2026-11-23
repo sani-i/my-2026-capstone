@@ -10,12 +10,38 @@ function clone(value) {
  * Services receive the repository as an argument; they do not import it.
  */
 export function createMemoryRepository() {
+  const users = new Map();
+  const usersByEmail = new Map();
   const events = new Map();
   const tiers = new Map();
   const bookings = new Map();
   const bookingsByReference = new Map();
 
   return {
+    async createUser(data) {
+      if (usersByEmail.has(data.email)) {
+        fail("EMAIL_TAKEN", "Email is already registered");
+      }
+      const user = {
+        id: data.id,
+        name: data.name || "",
+        email: data.email,
+        role: data.role,
+        passwordHash: data.passwordHash,
+      };
+      users.set(user.id, user);
+      usersByEmail.set(user.email, user);
+      return clone(user);
+    },
+
+    async getUserByEmail(email) {
+      return clone(usersByEmail.get(email));
+    },
+
+    async getUserById(id) {
+      return clone(users.get(id));
+    },
+
     async createEvent(data) {
       const event = {
         id: newId(),
@@ -43,6 +69,10 @@ export function createMemoryRepository() {
 
     async listEvents() {
       return [...events.values()].map(clone);
+    },
+
+    async listEventsByOrganizerId(organizerId) {
+      return [...events.values()].filter((e) => e.organizerId === organizerId).map(clone);
     },
 
     async createTier(data) {
@@ -112,6 +142,10 @@ export function createMemoryRepository() {
 
     async listBookings() {
       return [...bookings.values()].map(clone);
+    },
+
+    async listBookingsByUserId(userId) {
+      return [...bookings.values()].filter((b) => b.userId === userId).map(clone);
     },
 
     /**

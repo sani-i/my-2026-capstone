@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Ticketing - Log in or sign up</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="/index.html">Event Ticketing</a>
+        <nav aria-label="Main navigation">
+          <a href="/index.html">Events</a>
+          <a href="/tickets.html">My tickets</a>
+          <a href="/organizer.html">Organizer</a>
+          <span id="nav-auth" class="nav-auth"></span>
+        </nav>
+      </div>
+    </header>
+    <main class="container narrow">
+      <h1>Log in or sign up</h1>
+      <p class="muted">Your bookings are private, so you need an account.</p>
+
+      <div class="tabs" role="tablist" aria-label="Account actions">
+        <button type="button" id="tab-login" class="tab active" role="tab" aria-selected="true">Log in</button>
+        <button type="button" id="tab-signup" class="tab" role="tab" aria-selected="false">Sign up</button>
+      </div>
+
+      <section id="login-panel" class="card" aria-labelledby="login-heading">
+        <h2 id="login-heading">Log in</h2>
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="login-email">Email</label>
+            <input id="login-email" name="email" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="login-password">Password</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <div class="actions"><button type="submit" id="login-btn">Log in</button></div>
+        </form>
+        <div id="login-status" class="status" role="status" aria-live="polite"></div>
+      </section>
+
+      <section id="signup-panel" class="card hidden" aria-labelledby="signup-heading">
+        <h2 id="signup-heading">Create an account</h2>
+        <form id="signup-form" novalidate>
+          <div class="field">
+            <label for="signup-name">Name (optional)</label>
+            <input id="signup-name" name="name" type="text" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="signup-email">Email</label>
+            <input id="signup-email" name="email" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="signup-password">Password (at least 8 characters)</label>
+            <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8" required />
+          </div>
+          <div class="field">
+            <label for="signup-role">I am a</label>
+            <select id="signup-role" name="role">
+              <option value="attendee">Attendee (book tickets)</option>
+              <option value="organizer">Organizer (create events)</option>
+              <option value="staff">Staff</option>
+            </select>
+          </div>
+          <div class="actions"><button type="submit" id="signup-btn">Sign up</button></div>
+        </form>
+        <div id="signup-status" class="status" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+    <script type="module" src="/js/pages/login.js"></script>
+    <script type="module" src="/js/nav.js"></script>
+  </body>
+</html>

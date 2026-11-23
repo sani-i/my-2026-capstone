@@ -6,8 +6,10 @@ import { config } from "./config.js";
 import { createSqliteRepository } from "./repositories/sqlite.js";
 import { createEventService } from "./services/eventService.js";
 import { createBookingService } from "./services/bookingService.js";
+import { createAuthService } from "./services/authService.js";
 import { createMockPaymentGateway } from "./lib/mockPaymentGateway.js";
 import { registerApiRoutes } from "./http/routes.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 import { createDatabase } from "./db/connection.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,10 +24,12 @@ const repo = createSqliteRepository(db);
 const paymentGateway = createMockPaymentGateway();
 const eventService = createEventService(repo);
 const bookingService = createBookingService(repo, paymentGateway);
+const authService = createAuthService(repo);
 
 const { server } = createApp({
   publicDir,
   registerRoutes(router, helpers) {
+    registerAuthRoutes(router, { authService });
     registerApiRoutes(router, { ...helpers, eventService, bookingService });
   },
 });
@@ -33,4 +37,7 @@ const { server } = createApp({
 server.listen(config.port, () => {
   console.log(`Server listening on http://localhost:${config.port}`);
   console.log(`Database: ${dbPath}`);
+  if (!process.env.AUTH_SECRET && process.env.NODE_ENV !== "production") {
+    console.log("Using development token secret. Set AUTH_SECRET before deploying.");
+  }
 });

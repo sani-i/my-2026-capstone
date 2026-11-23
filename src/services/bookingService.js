@@ -14,15 +14,19 @@ function assertNonEmptyString(value, label) {
   return value.trim();
 }
 
-function requireUserId(userId) {
-  if (typeof userId !== "string" || userId.trim().length === 0) {
-    fail("UNAUTHENTICATED", "x-user-id header is required");
+/** Build 7: identity comes from a verified token, never from a request header. */
+function requireUser(user) {
+  if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()) {
+    fail("UNAUTHENTICATED", "Authentication required");
   }
-  return userId.trim();
+  return user;
 }
 
-function assertBookingOwner(booking, userId) {
-  if (booking.userId !== userId) {
+function assertBookingOwner(booking, user) {
+  // Story S13 says another person's booking is FORBIDDEN. The Build 7 AI prompt
+  // suggested NOT_FOUND to avoid leaking existence; we follow the user story
+  // (and the existing tests) and keep the same rule for view/pay/cancel.
+  if (booking.userId !== user.id) {
     fail("FORBIDDEN", "Not your booking");
   }
 }
@@ -38,8 +42,8 @@ export function createBookingService(repo, paymentGateway) {
   if (!repo) fail("VALIDATION", "repo is required");
   if (!paymentGateway) fail("VALIDATION", "paymentGateway is required");
 
-  async function bookTickets(input, userId) {
-    const uid = requireUserId(userId);
+  async function bookTickets(input, user) {
+    const u = requireUser(user);
     assertObject(input, "input");
     const tierId = assertNonEmptyString(input.tierId, "tierId");
     const quantity = assertQuantity(input.quantity);
@@ -60,7 +64,7 @@ export function createBookingService(repo, paymentGateway) {
       booking = await repo.createBooking({
         eventId: event.id,
         tierId: tier.id,
-        userId: uid,
+        userId: u.id,
         quantity,
         amountCents: tier.priceCents * quantity,
         status: "pending",
@@ -77,24 +81,31 @@ export function createBookingService(repo, paymentGateway) {
     return booking;
   }
 
-  async function getBooking(reference, userId) {
-    const uid = requireUserId(userId);
+  async function getBooking(reference, user) {
+    const u = requireUser(user);
     const ref = assertNonEmptyString(reference, "reference");
     const booking = await repo.getBookingByReference(ref);
     if (!booking) fail("NOT_FOUND", `booking not found: ${ref}`);
-    assertBookingOwner(booking, uid);
+    assertBookingOwner(booking, u);
     return booking;
   }
 
-  async function payBooking(reference, input, userId) {
-    const uid = requireUserId(userId);
+  /** Only the bookings belonging to the authenticated user. */
+  async function listMyBookings(user) {
+    const u = requireUser(user);
+    const bookings = await repo.listBookingsByUserId(u.id);
+    return bookings.filter((b) => b.userId === u.id);
+  }
+
+  async function payBooking(reference, input, user) {
+    const u = requireUser(user);
     const ref = assertNonEmptyString(reference, "reference");
     assertObject(input, "input");
     const paymentToken = assertNonEmptyString(input.paymentToken, "paymentToken");
 
     const booking = await repo.getBookingByReference(ref);
     if (!booking) fail("NOT_FOUND", `booking not found: ${ref}`);
-    assertBookingOwner(booking, uid);
+    assertBookingOwner(booking, u);
 
     // S07: already paid -> rejected and card charged only once. Check before charging.
     if (booking.status === "paid") {
@@ -117,20 +128,19 @@ export function createBookingService(repo, paymentGateway) {
     booking.status = "paid";
     booking.paidAt = new Date().toISOString();
     booking.chargeId = result.chargeId;
-    const saved = await repo.saveBooking(booking);
-    return saved;
+    return repo.saveBooking(booking);
   }
 
-  async function cancelBooking(reference, userId) {
-    const uid = requireUserId(userId);
+  async function cancelBooking(reference, user) {
+    const u = requireUser(user);
     const ref = assertNonEmptyString(reference, "reference");
     const booking = await repo.getBookingByReference(ref);
     if (!booking) fail("NOT_FOUND", `booking not found: ${ref}`);
-    assertBookingOwner(booking, uid);
+    assertBookingOwner(booking, u);
 
     if (booking.status !== "pending") {
       // unpaid bookings only for now; paid -> INVALID_STATE per examples
-      fail("INVALID_STATE", "only unpaid pending bookings can be cancelled in Build 4");
+      fail("INVALID_STATE", "only unpaid pending bookings can be cancelled here");
     }
 
     // Transition pending -> cancelled
@@ -140,13 +150,13 @@ export function createBookingService(repo, paymentGateway) {
 
     booking.status = "cancelled";
     booking.cancelledAt = new Date().toISOString();
-    await repo.saveBooking(booking);
-    return booking;
+    return repo.saveBooking(booking);
   }
 
   return {
     bookTickets,
     getBooking,
+    listMyBookings,
     payBooking,
     cancelBooking,
   };

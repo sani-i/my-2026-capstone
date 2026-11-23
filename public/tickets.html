@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Ticketing - My tickets</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="/index.html">Event Ticketing</a>
+        <nav aria-label="Main navigation">
+          <a href="/index.html">Events</a>
+          <a href="/tickets.html">My tickets</a>
+          <a href="/organizer.html">Organizer</a>
+          <span id="nav-auth" class="nav-auth"></span>
+        </nav>
+      </div>
+    </header>
+    <main class="container">
+      <h1>My tickets</h1>
+      <p class="muted">Only your own bookings are shown. The server checks your token.</p>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div id="bookings-list" class="tickets-list" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/js/pages/tickets.js"></script>
+    <script type="module" src="/js/nav.js"></script>
+  </body>
+</html>

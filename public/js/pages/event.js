@@ -1,4 +1,5 @@
 import { createBooking, getEvent, pay } from "../api.js";
+import { requireLogin } from "../session.js";
 import { clear, el, formatCents } from "../ui.js";
 
 const statusEl = document.getElementById("status");
@@ -56,7 +57,12 @@ function renderCheckout(booking) {
   );
   setPaymentStatus("");
   payBtn.disabled = false;
-  startCountdown(booking.holdExpiresAt);
+  // The API returns createdAt; the 10-minute hold window is a display detail
+  // here (server-side expiry belongs to a later build).
+  const holdExpiresAt =
+    booking.holdExpiresAt ||
+    new Date(Date.parse(booking.createdAt) + 10 * 60 * 1000).toISOString();
+  startCountdown(holdExpiresAt);
   checkoutSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -87,6 +93,7 @@ function startCountdown(holdExpiresAt) {
 }
 
 async function handleBook(tier) {
+  if (!requireLogin()) return;
   const qtyInput = document.getElementById(`qty-${tier.id}`);
   const qty = Number(qtyInput?.value);
   const max = Math.min(10, tier.seatsLeft);

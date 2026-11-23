@@ -36,15 +36,19 @@ function assertPositiveInt(value, label) {
   return value;
 }
 
-function requireUserId(userId) {
-  if (typeof userId !== "string" || userId.trim().length === 0) {
-    fail("UNAUTHENTICATED", "x-user-id header is required");
+/** Build 7: identity and role come from a verified token. */
+function requireOrganizer(user) {
+  if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()) {
+    fail("UNAUTHENTICATED", "Authentication required");
   }
-  return userId.trim();
+  if (user.role !== "organizer") {
+    fail("FORBIDDEN", "Only organizers can manage events");
+  }
+  return user;
 }
 
-function assertOrganizer(event, userId) {
-  if (event.organizerId !== userId) {
+function assertOrganizer(event, user) {
+  if (event.organizerId !== user.id) {
     fail("FORBIDDEN", "You do not own this event");
   }
 }
@@ -85,8 +89,8 @@ function toSearchSummary(event, tiers) {
 export function createEventService(repo) {
   if (!repo) fail("VALIDATION", "repo is required");
 
-  async function createEvent(input, userId) {
-    const uid = requireUserId(userId);
+  async function createEvent(input, user) {
+    const u = requireOrganizer(user);
     assertObject(input, "input");
     const title = assertNonEmptyString(input.title, "title");
     const city = assertNonEmptyString(input.city, "city");
@@ -94,7 +98,7 @@ export function createEventService(repo) {
     const startsAt = assertIsoDate(input.startsAt, "startsAt");
 
     const event = await repo.createEvent({
-      organizerId: uid,
+      organizerId: u.id,
       title,
       city,
       venue,
@@ -103,8 +107,8 @@ export function createEventService(repo) {
     return eventWithTiers(event, []);
   }
 
-  async function addTier(eventId, input, userId) {
-    const uid = requireUserId(userId);
+  async function addTier(eventId, input, user) {
+    const u = requireOrganizer(user);
     assertNonEmptyString(eventId, "eventId");
     assertObject(input, "input");
     const name = assertNonEmptyString(input.name, "name");
@@ -113,7 +117,7 @@ export function createEventService(repo) {
 
     const event = await repo.getEventById(eventId);
     if (!event) fail("NOT_FOUND", `event not found: ${eventId}`);
-    assertOrganizer(event, uid);
+    assertOrganizer(event, u);
 
     const tier = await repo.createTier({
       eventId: event.id,
@@ -124,12 +128,12 @@ export function createEventService(repo) {
     return tierSummary(tier);
   }
 
-  async function publishEvent(eventId, userId) {
-    const uid = requireUserId(userId);
+  async function publishEvent(eventId, user) {
+    const u = requireOrganizer(user);
     assertNonEmptyString(eventId, "eventId");
     const event = await repo.getEventById(eventId);
     if (!event) fail("NOT_FOUND", `event not found: ${eventId}`);
-    assertOrganizer(event, uid);
+    assertOrganizer(event, u);
     const tiers = await repo.listTiersByEventId(event.id);
     if (tiers.length === 0) {
       fail("INVALID_STATE", "cannot publish an event with no ticket tiers");
@@ -139,12 +143,12 @@ export function createEventService(repo) {
     return eventWithTiers(saved, tiers);
   }
 
-  async function unpublishEvent(eventId, userId) {
-    const uid = requireUserId(userId);
+  async function unpublishEvent(eventId, user) {
+    const u = requireOrganizer(user);
     assertNonEmptyString(eventId, "eventId");
     const event = await repo.getEventById(eventId);
     if (!event) fail("NOT_FOUND", `event not found: ${eventId}`);
-    assertOrganizer(event, uid);
+    assertOrganizer(event, u);
     event.status = "draft";
     const saved = await repo.saveEvent(event);
     const tiers = await repo.listTiersByEventId(event.id);
@@ -157,6 +161,18 @@ export function createEventService(repo) {
     if (!event) fail("NOT_FOUND", `event not found: ${eventId}`);
     const tiers = await repo.listTiersByEventId(event.id);
     return eventWithTiers(event, tiers);
+  }
+
+  /** All events (including drafts) owned by the authenticated organizer. */
+  async function listMyEvents(user) {
+    const u = requireOrganizer(user);
+    const events = await repo.listEventsByOrganizerId(u.id);
+    const result = [];
+    for (const event of events) {
+      const tiers = await repo.listTiersByEventId(event.id);
+      result.push(eventWithTiers(event, tiers));
+    }
+    return result;
   }
 
   async function searchEvents(query = {}) {
@@ -197,6 +213,7 @@ export function createEventService(repo) {
     publishEvent,
     unpublishEvent,
     getEvent,
+    listMyEvents,
     searchEvents,
   };
 }

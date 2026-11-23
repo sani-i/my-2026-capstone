@@ -49,6 +49,22 @@ export function createSqliteRepository(db) {
   const ensureUser = db.prepare(
     "INSERT OR IGNORE INTO users (id, name, email, role) VALUES (?, '', '', '')",
   );
+  const insertAuthUser = db.prepare(
+    "INSERT INTO users (id, name, email, role, password_hash) VALUES (?, ?, ?, ?, ?)",
+  );
+  const getUserByEmailStmt = db.prepare("SELECT * FROM users WHERE email = ?");
+  const getUserByIdStmt = db.prepare("SELECT * FROM users WHERE id = ?");
+
+  function rowToUser(row) {
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      name: row.name || "",
+      email: row.email,
+      role: row.role,
+      passwordHash: row.password_hash ?? "",
+    };
+  }
 
   const insertEvent = db.prepare(
     `INSERT INTO events (id, organizer_id, title, city, venue, starts_at, status)
@@ -56,6 +72,9 @@ export function createSqliteRepository(db) {
   );
   const getEvent = db.prepare("SELECT * FROM events WHERE id = ?");
   const listEventsStmt = db.prepare("SELECT * FROM events ORDER BY rowid ASC");
+  const listEventsByOrganizerStmt = db.prepare(
+    "SELECT * FROM events WHERE organizer_id = ? ORDER BY rowid ASC",
+  );
   const updateEvent = db.prepare(
     `UPDATE events
      SET organizer_id = ?, title = ?, city = ?, venue = ?, starts_at = ?, status = ?
@@ -83,6 +102,9 @@ export function createSqliteRepository(db) {
   const getBookingByIdStmt = db.prepare("SELECT * FROM bookings WHERE id = ?");
   const getBookingByRefStmt = db.prepare("SELECT * FROM bookings WHERE reference = ?");
   const listBookingsStmt = db.prepare("SELECT * FROM bookings ORDER BY rowid ASC");
+  const listBookingsByUserStmt = db.prepare(
+    "SELECT * FROM bookings WHERE user_id = ? ORDER BY rowid ASC",
+  );
   const updateBooking = db.prepare(
     `UPDATE bookings
      SET event_id = ?, tier_id = ?, user_id = ?, quantity = ?, amount_cents = ?, status = ?,
@@ -109,6 +131,26 @@ export function createSqliteRepository(db) {
   }
 
   return {
+    async createUser(data) {
+      try {
+        insertAuthUser.run(data.id, data.name || "", data.email, data.role, data.passwordHash);
+      } catch (err) {
+        if (String(err?.message || "").includes("UNIQUE")) {
+          fail("EMAIL_TAKEN", "Email is already registered");
+        }
+        throw err;
+      }
+      return rowToUser(getUserByIdStmt.get(data.id));
+    },
+
+    async getUserByEmail(email) {
+      return rowToUser(getUserByEmailStmt.get(email));
+    },
+
+    async getUserById(id) {
+      return rowToUser(getUserByIdStmt.get(id));
+    },
+
     async createEvent(data) {
       ensureUser.run(data.organizerId);
       const event = {
@@ -153,6 +195,10 @@ export function createSqliteRepository(db) {
 
     async listEvents() {
       return listEventsStmt.all().map(hydrateEvent);
+    },
+
+    async listEventsByOrganizerId(organizerId) {
+      return listEventsByOrganizerStmt.all(organizerId).map(hydrateEvent);
     },
 
     async createTier(data) {
@@ -239,6 +285,10 @@ export function createSqliteRepository(db) {
 
     async listBookings() {
       return listBookingsStmt.all().map(rowToBooking);
+    },
+
+    async listBookingsByUserId(userId) {
+      return listBookingsByUserStmt.all(userId).map(rowToBooking);
     },
 
     /**

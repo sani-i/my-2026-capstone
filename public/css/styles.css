@@ -55,4 +55,19 @@ button.secondary:hover:not(:disabled) { background: #d9e0d9; }
 .countdown { font-weight: 700; background: var(--warn-bg); padding: 0.75rem; border-radius: 8px; }
 .error-msg { color: var(--danger); font-weight: 600; margin-top: 0.5rem; }
 .success-msg { color: var(--success); font-weight: 600; }
+.nav-auth { display: inline-flex; align-items: center; gap: 0.75rem; }
+.nav-user { color: var(--muted); font-size: 0.9rem; }
+nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.container.narrow { width: min(560px, calc(100% - 2rem)); }
+.tabs { display: flex; gap: 0.5rem; margin: 1rem 0; }
+.tab { background: #e8ece8; color: var(--text); }
+.tab.active { background: var(--primary); color: #fff; }
+.tickets-list { display: grid; gap: 1rem; margin-top: 1rem; }
+.ticket h2 { font-size: 1.1rem; }
+.tier-form { margin-top: 0.75rem; }
+.tier-form input { min-width: 130px; }
+.badge.status-paid, .badge.status-available { background: var(--success-bg); color: var(--success); }
+.badge.status-pending { background: var(--warn-bg); color: #7a5600; }
+.badge.status-cancelled, .badge.status-refunded { background: #eceff1; color: #37474f; }
+h4 { margin: 1rem 0 0.5rem; }
 @media (max-width: 600px) { .header-row { flex-direction: column; align-items: flex-start; } }
