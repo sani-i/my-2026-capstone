@@ -1,4 +1,4 @@
-import { createBooking, getEvent, pay } from "../api.js";
+import { createBooking, getEvent, joinWaitlist, listMyWaitlist, pay } from "../api.js";
 import { requireLogin } from "../session.js";
 import { clear, el, formatCents } from "../ui.js";
 
@@ -14,6 +14,7 @@ const payBtn = document.getElementById("pay-btn");
 let currentEvent = null;
 let currentBooking = null;
 let countdownTimer = null;
+let myWaitlist = new Map();
 
 function setStatus(message, type = "") {
   clear(statusEl);
@@ -116,6 +117,50 @@ async function handleBook(tier) {
   }
 }
 
+async function loadMyWaitlist() {
+  try {
+    const { entries } = await listMyWaitlist();
+    myWaitlist = new Map(entries.map((entry) => [entry.tierId, entry]));
+  } catch {
+    // Not logged in (or session expired); sold-out tiers still show the button
+    // and requireLogin() explains what to do.
+    myWaitlist = new Map();
+  }
+}
+
+async function handleWaitlistJoin(tier) {
+  if (!requireLogin()) return;
+  setStatus("Joining the waitlist...");
+  try {
+    await joinWaitlist({ tierId: tier.id, quantity: 1 });
+    setStatus("You joined the waitlist. We will hold a seat for you when one frees up.", "success");
+    await loadEvent(currentEvent.id);
+  } catch (err) {
+    if (err?.code === "ALREADY_ON_WAITLIST") {
+      await loadMyWaitlist();
+      renderEvent(currentEvent);
+    }
+    setStatus(err?.message || "Could not join the waitlist.", "error");
+  }
+}
+
+function renderWaitlistAction(tier) {
+  const entry = myWaitlist.get(tier.id);
+  if (entry?.status === "offered") {
+    return el("a", { className: "button-link", href: "/tickets.html" }, [
+      "Seat offered - view offer",
+    ]);
+  }
+  if (entry && ["waiting", "accepting", "accepted"].includes(entry.status)) {
+    return el("button", { type: "button", className: "secondary", disabled: true }, [
+      entry.position ? `On waitlist (#${entry.position})` : "On waitlist",
+    ]);
+  }
+  return el("button", { type: "button", onClick: () => handleWaitlistJoin(tier) }, [
+    "Join waitlist",
+  ]);
+}
+
 function renderTier(tier) {
   const soldOut = tier.seatsLeft <= 0;
   const maxQty = Math.min(10, Math.max(0, tier.seatsLeft));
@@ -133,11 +178,9 @@ function renderTier(tier) {
     inputmode: "numeric",
   });
 
-  const bookBtn = el("button", {
-    type: "button",
-    disabled: soldOut,
-    onClick: () => handleBook(tier),
-  }, [soldOut ? "Sold out" : "Book tickets"]);
+  const action = soldOut
+    ? renderWaitlistAction(tier)
+    : el("button", { type: "button", onClick: () => handleBook(tier) }, ["Book tickets"]);
 
   return el("div", { className: `tier ${soldOut ? "sold-out" : ""}` }, [
     el("div", { className: "tier-header" }, [
@@ -147,11 +190,13 @@ function renderTier(tier) {
     el("p", { className: "meta" }, [`Price: ${formatCents(tier.priceCents)}`]),
     el("p", { className: "meta" }, [`Capacity: ${tier.capacity} • Sold: ${tier.sold}`]),
     el("div", { className: "qty-row" }, [
-      el("div", { className: "field" }, [
-        el("label", { htmlFor: qtyId }, ["Quantity"]),
-        qtyInput,
-      ]),
-      bookBtn,
+      soldOut
+        ? el("p", { className: "meta" }, ["No seats left - join the waitlist for the next one."])
+        : el("div", { className: "field" }, [
+            el("label", { htmlFor: qtyId }, ["Quantity"]),
+            qtyInput,
+          ]),
+      action,
     ]),
   ]);
 }
@@ -172,6 +217,7 @@ async function loadEvent(id) {
   try {
     const event = await getEvent(id);
     currentEvent = event;
+    await loadMyWaitlist();
     renderEvent(event);
     if (!currentBooking) setStatus("");
   } catch (err) {

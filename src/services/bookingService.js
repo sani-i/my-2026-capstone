@@ -1,5 +1,8 @@
 import { fail } from "../domain/errors.js";
 import { assertTransition } from "../domain/bookingStateMachine.js";
+import { calculateRefund } from "../domain/refundPolicy.js";
+import { HOLD_MS } from "../domain/timings.js";
+import { createClock } from "../lib/clock.js";
 
 function assertObject(value, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -38,9 +41,28 @@ function assertQuantity(value) {
   return value;
 }
 
-export function createBookingService(repo, paymentGateway) {
+export function createBookingService(
+  repo,
+  paymentGateway,
+  { clock = createClock(), seatService, holdMs = HOLD_MS } = {},
+) {
   if (!repo) fail("VALIDATION", "repo is required");
   if (!paymentGateway) fail("VALIDATION", "paymentGateway is required");
+  if (!clock || typeof clock.nowMs !== "function") fail("VALIDATION", "clock is required");
+
+  function holdExpiryFor(booking) {
+    if (booking.holdExpiresAt) return Date.parse(booking.holdExpiresAt);
+    // Bookings created before Build 8 have no explicit expiry column.
+    return Date.parse(booking.createdAt) + holdMs;
+  }
+
+  function isHoldExpired(booking) {
+    return holdExpiryFor(booking) <= clock.nowMs();
+  }
+
+  function newHoldExpiresAt() {
+    return new Date(clock.nowMs() + holdMs).toISOString();
+  }
 
   async function bookTickets(input, user) {
     const u = requireUser(user);
@@ -68,6 +90,8 @@ export function createBookingService(repo, paymentGateway) {
         quantity,
         amountCents: tier.priceCents * quantity,
         status: "pending",
+        createdAt: clock.nowIso(),
+        holdExpiresAt: newHoldExpiresAt(),
       });
     } catch (err) {
       // If booking creation fails after seats reserved, release them.
@@ -79,6 +103,32 @@ export function createBookingService(repo, paymentGateway) {
       throw err;
     }
     return booking;
+  }
+
+  /** Create the pending booking after a waitlist offer was accepted. The seats
+   * are already held by the offer, so this must NOT reserve them again. */
+  async function createBookingFromOffer(entry, user) {
+    const u = requireUser(user);
+    if (!entry || !["offered", "accepting"].includes(entry.status)) {
+      fail("INVALID_STATE", "No active offer");
+    }
+    if (entry.userId !== u.id) fail("FORBIDDEN", "Not your offer");
+    const tier = await repo.getTierById(entry.tierId);
+    if (!tier) fail("NOT_FOUND", `tier not found: ${entry.tierId}`);
+    const event = await repo.getEventById(tier.eventId);
+    if (!event || event.status !== "published") {
+      fail("INVALID_STATE", "event is not published");
+    }
+    return repo.createBooking({
+      eventId: event.id,
+      tierId: tier.id,
+      userId: u.id,
+      quantity: entry.quantity,
+      amountCents: tier.priceCents * entry.quantity,
+      status: "pending",
+      createdAt: clock.nowIso(),
+      holdExpiresAt: newHoldExpiresAt(),
+    });
   }
 
   async function getBooking(reference, user) {
@@ -97,6 +147,31 @@ export function createBookingService(repo, paymentGateway) {
     return bookings.filter((b) => b.userId === u.id);
   }
 
+  /** What the UI shows before the attendee confirms a cancellation. */
+  async function getCancellationQuote(reference, user) {
+    const booking = await getBooking(reference, user);
+    if (booking.status === "paid") {
+      const event = await repo.getEventById(booking.eventId);
+      if (!event) fail("NOT_FOUND", `event not found: ${booking.eventId}`);
+      const quote = calculateRefund({
+        amountCents: booking.amountCents,
+        startsAt: event.startsAt,
+        now: clock.now(),
+      });
+      return { ...quote, status: "paid", reference: booking.reference };
+    }
+    if (booking.status === "pending") {
+      return {
+        refundCents: 0,
+        percent: 0,
+        amountCents: booking.amountCents,
+        status: "pending",
+        reference: booking.reference,
+      };
+    }
+    fail("INVALID_STATE", "This booking can no longer be cancelled");
+  }
+
   async function payBooking(reference, input, user) {
     const u = requireUser(user);
     const ref = assertNonEmptyString(reference, "reference");
@@ -106,6 +181,11 @@ export function createBookingService(repo, paymentGateway) {
     const booking = await repo.getBookingByReference(ref);
     if (!booking) fail("NOT_FOUND", `booking not found: ${ref}`);
     assertBookingOwner(booking, u);
+
+    // S10: an expired hold cannot be paid, even if the job has not run yet.
+    if (isHoldExpired(booking)) {
+      fail("BOOKING_EXPIRED", "The seat hold expired. Please book again.");
+    }
 
     // S07: already paid -> rejected and card charged only once. Check before charging.
     if (booking.status === "paid") {
@@ -126,7 +206,7 @@ export function createBookingService(repo, paymentGateway) {
     }
 
     booking.status = "paid";
-    booking.paidAt = new Date().toISOString();
+    booking.paidAt = clock.nowIso();
     booking.chargeId = result.chargeId;
     return repo.saveBooking(booking);
   }
@@ -138,26 +218,96 @@ export function createBookingService(repo, paymentGateway) {
     if (!booking) fail("NOT_FOUND", `booking not found: ${ref}`);
     assertBookingOwner(booking, u);
 
-    if (booking.status !== "pending") {
-      // unpaid bookings only for now; paid -> INVALID_STATE per examples
-      fail("INVALID_STATE", "only unpaid pending bookings can be cancelled here");
+    if (booking.status === "cancelled" || booking.status === "refunded") {
+      fail("INVALID_STATE", "booking is already cancelled");
     }
 
-    // Transition pending -> cancelled
-    assertTransition(booking.status, "cancelled");
+    const at = clock.nowIso();
+    let toStatus = "cancelled";
+    let refundCents;
+    let refundedAt;
 
-    await repo.releaseSeats(booking.tierId, booking.quantity);
+    if (booking.status === "paid") {
+      const event = await repo.getEventById(booking.eventId);
+      if (!event) fail("NOT_FOUND", `event not found: ${booking.eventId}`);
+      const quote = calculateRefund({
+        amountCents: booking.amountCents,
+        startsAt: event.startsAt,
+        now: clock.now(),
+      });
+      toStatus = "refunded";
+      refundCents = quote.refundCents;
+      refundedAt = at;
+    } else if (booking.status !== "pending") {
+      fail("INVALID_STATE", `cannot cancel a ${booking.status} booking`);
+    }
 
-    booking.status = "cancelled";
-    booking.cancelledAt = new Date().toISOString();
-    return repo.saveBooking(booking);
+    assertTransition(booking.status, toStatus);
+
+    // Compare-and-set in the repository: exactly one caller changes the status
+    // and releases the seats. A losing concurrent call gets { conflict: true }.
+    const result = await repo.cancelBookingWithRelease({
+      id: booking.id,
+      from: booking.status,
+      to: toStatus,
+      cancelledAt: at,
+      refundCents,
+      refundedAt,
+    });
+    if (!result || result.conflict) {
+      fail("INVALID_STATE", "booking is already cancelled");
+    }
+
+    let saved = result.booking;
+    if (toStatus === "refunded") {
+      // The gateway is called only by the caller that won the compare-and-set.
+      const refund = await paymentGateway.refund({
+        chargeId: booking.chargeId,
+        amountCents: booking.amountCents,
+        refundCents,
+        reference: booking.reference,
+      });
+      if (!refund?.ok) fail(refund?.code || "REFUND_FAILED", refund?.message || "Refund failed");
+      saved = await repo.saveBooking({ ...saved, refundId: refund.refundId });
+    }
+
+    if (seatService) await seatService.offerNext(booking.tierId);
+    return saved;
+  }
+
+  /** S10: cancel expired pending holds and free their seats exactly once. */
+  async function expireUnpaidBookings() {
+    const pending = await repo.listBookingsByStatus("pending");
+    const expired = pending.filter((booking) => isHoldExpired(booking));
+    const tierIds = new Set();
+    let count = 0;
+
+    for (const booking of expired) {
+      const result = await repo.cancelBookingWithRelease({
+        id: booking.id,
+        from: "pending",
+        to: "cancelled",
+        cancelledAt: clock.nowIso(),
+      });
+      if (result && !result.conflict) {
+        count += 1;
+        tierIds.add(booking.tierId);
+      }
+    }
+    for (const tierId of tierIds) {
+      if (seatService) await seatService.offerNext(tierId);
+    }
+    return { count, tierIds: [...tierIds] };
   }
 
   return {
     bookTickets,
+    createBookingFromOffer,
     getBooking,
     listMyBookings,
+    getCancellationQuote,
     payBooking,
     cancelBooking,
+    expireUnpaidBookings,
   };
 }

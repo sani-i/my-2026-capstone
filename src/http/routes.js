@@ -8,7 +8,7 @@ function queryToObject(searchParams) {
   return obj;
 }
 
-export function registerApiRoutes(router, { eventService, bookingService }) {
+export function registerApiRoutes(router, { eventService, bookingService, waitlistService }) {
   // Public reads: browsing events needs no login.
   router.add("GET", "/api/events", async (_req, _res, ctx) => {
     const events = await eventService.searchEvents(queryToObject(ctx.query));
@@ -66,6 +66,12 @@ export function registerApiRoutes(router, { eventService, bookingService }) {
     ctx.sendJson(200, { bookings });
   });
 
+  router.add("GET", "/api/bookings/:reference/cancel-quote", async (req, _res, ctx) => {
+    const user = requireUser(req);
+    const quote = await bookingService.getCancellationQuote(ctx.params.reference, user);
+    ctx.sendJson(200, quote);
+  });
+
   router.add("GET", "/api/bookings/:reference", async (req, _res, ctx) => {
     const user = requireUser(req);
     const booking = await bookingService.getBooking(ctx.params.reference, user);
@@ -86,5 +92,24 @@ export function registerApiRoutes(router, { eventService, bookingService }) {
     const user = requireUser(req);
     const booking = await bookingService.cancelBooking(ctx.params.reference, user);
     ctx.sendJson(200, booking);
+  });
+
+  // --- Build 8 waitlist --------------------------------------------------
+  router.add("POST", "/api/waitlist", async (req, _res, ctx) => {
+    const user = requireUser(req);
+    const entry = await waitlistService.joinWaitlist(ctx.body ?? {}, user);
+    ctx.sendJson(201, entry);
+  });
+
+  router.add("GET", "/api/waitlist", async (req, _res, ctx) => {
+    const user = requireUser(req);
+    const entries = await waitlistService.listMyWaitlist(user);
+    ctx.sendJson(200, { entries });
+  });
+
+  router.add("POST", "/api/waitlist/:id/accept", async (req, _res, ctx) => {
+    const user = requireUser(req);
+    const result = await waitlistService.acceptOffer(ctx.params.id, user);
+    ctx.sendJson(200, result);
   });
 }

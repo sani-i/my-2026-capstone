@@ -5,32 +5,47 @@ import { createMemoryRepository } from "../src/repositories/memory.js";
 import { createEventService } from "../src/services/eventService.js";
 import { createBookingService } from "../src/services/bookingService.js";
 import { createAuthService } from "../src/services/authService.js";
+import { createSeatService } from "../src/services/seatService.js";
+import { createWaitlistService } from "../src/services/waitlistService.js";
 import { createMockPaymentGateway } from "../src/lib/mockPaymentGateway.js";
+import { createClock } from "../src/lib/clock.js";
+import { createMaintenanceJob } from "../src/jobs/maintenance.js";
 import { registerApiRoutes } from "../src/http/routes.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const publicDir = path.resolve(__dirname, "../public");
 
-export async function withApi(run, { paymentGateway: customGateway } = {}) {
+export async function withApi(
+  run,
+  { paymentGateway: customGateway, clock = createClock() } = {},
+) {
   const repo = createMemoryRepository();
   const paymentGateway = customGateway || createMockPaymentGateway();
   const eventService = createEventService(repo);
-  const bookingService = createBookingService(repo, paymentGateway);
+  const seatService = createSeatService(repo, { clock });
+  const bookingService = createBookingService(repo, paymentGateway, { clock, seatService });
+  const waitlistService = createWaitlistService(repo, { clock, seatService, bookingService });
   const authService = createAuthService(repo);
+  const maintenance = createMaintenanceJob({ bookingService, seatService });
 
   const { server } = createApp({
     publicDir,
     registerRoutes(router, helpers) {
       registerAuthRoutes(router, { authService });
-      registerApiRoutes(router, { ...helpers, eventService, bookingService });
+      registerApiRoutes(router, {
+        ...helpers,
+        eventService,
+        bookingService,
+        waitlistService,
+      });
     },
   });
 
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   try {
-    await run({ baseUrl, repo });
+    await run({ baseUrl, repo, clock, maintenance, bookingService, seatService, waitlistService });
   } finally {
     await new Promise((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),
@@ -71,14 +86,22 @@ export async function login(baseUrl, email, password) {
   return { ...result, token: result.json?.token, user: result.json?.user };
 }
 
-export async function seedEvent(baseUrl, token, { capacity = 100, priceCents = 500000 } = {}) {
+export async function seedEvent(
+  baseUrl,
+  token,
+  {
+    capacity = 100,
+    priceCents = 500000,
+    startsAt = "2026-12-05T17:00:00Z",
+  } = {},
+) {
   const created = await request(baseUrl, "POST", "/api/events", {
     token,
     body: {
       title: "Lagos Tech Meetup",
       city: "Lagos",
       venue: "Landmark Centre",
-      startsAt: "2026-12-05T17:00:00Z",
+      startsAt,
     },
   });
   const eventId = created.json.id;

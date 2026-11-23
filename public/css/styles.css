@@ -64,6 +64,16 @@ nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .tab.active { background: var(--primary); color: #fff; }
 .tickets-list { display: grid; gap: 1rem; margin-top: 1rem; }
 .ticket h2 { font-size: 1.1rem; }
+.waitlist-section { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.countdown { font-weight: 700; background: var(--warn-bg); padding: 0.75rem; border-radius: 8px; display: inline-block; margin: 0.5rem 0; }
+.countdown.expired { background: var(--danger-bg); color: var(--danger); }
+.cancel-confirm { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-bg); }
+.cancel-confirm .refund-amount { font-weight: 700; margin: 0 0 0.4rem; }
+button.danger { background: var(--danger); }
+button.danger:hover:not(:disabled) { background: #8a1a12; }
+.button-link { display: inline-block; padding: 0.65rem 1rem; border-radius: 8px; background: var(--primary); color: #fff; font-weight: 600; text-decoration: none; }
+.button-link:hover { background: var(--primary-dark); }
+.button-link.secondary { background: #e8ece8; color: var(--text); }
 .tier-form { margin-top: 0.75rem; }
 .tier-form input { min-width: 130px; }
 .badge.status-paid, .badge.status-available { background: var(--success-bg); color: var(--success); }

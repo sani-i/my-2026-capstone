@@ -98,6 +98,26 @@ export function cancelBooking(reference) {
   });
 }
 
+export function getCancelQuote(reference) {
+  return request(`/bookings/${encodeURIComponent(reference)}/cancel-quote`, { auth: true });
+}
+
+// --- Build 8 waitlist ---
+export function joinWaitlist(input) {
+  return request("/waitlist", { method: "POST", body: input, auth: true });
+}
+
+export async function listMyWaitlist() {
+  return request("/waitlist", { auth: true });
+}
+
+export function acceptWaitlistOffer(entryId) {
+  return request(`/waitlist/${encodeURIComponent(entryId)}/accept`, {
+    method: "POST",
+    auth: true,
+  });
+}
+
 // --- organizer ---
 export function createEvent(input) {
   return request("/events", { method: "POST", body: input, auth: true });

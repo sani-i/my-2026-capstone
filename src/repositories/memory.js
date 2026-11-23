@@ -8,6 +8,7 @@ function clone(value) {
 /**
  * In-memory repository. Async methods for events, tiers and bookings.
  * Services receive the repository as an argument; they do not import it.
+ * The critical sections contain no await, so they are atomic in one process.
  */
 export function createMemoryRepository() {
   const users = new Map();
@@ -16,6 +17,7 @@ export function createMemoryRepository() {
   const tiers = new Map();
   const bookings = new Map();
   const bookingsByReference = new Map();
+  const waitlist = new Map();
 
   return {
     async createUser(data) {
@@ -106,6 +108,10 @@ export function createMemoryRepository() {
       return [...tiers.values()].filter((t) => t.eventId === eventId).map(clone);
     },
 
+    async listTiers() {
+      return [...tiers.values()].map(clone);
+    },
+
     async createBooking(data) {
       const booking = {
         id: newId(),
@@ -116,7 +122,11 @@ export function createMemoryRepository() {
         quantity: data.quantity,
         amountCents: data.amountCents,
         status: data.status ?? "pending",
-        createdAt: new Date().toISOString(),
+        createdAt: data.createdAt || new Date().toISOString(),
+        holdExpiresAt: data.holdExpiresAt,
+        refundCents: data.refundCents,
+        refundedAt: data.refundedAt,
+        refundId: data.refundId,
       };
       bookings.set(booking.id, booking);
       bookingsByReference.set(booking.reference, booking.id);
@@ -148,9 +158,32 @@ export function createMemoryRepository() {
       return [...bookings.values()].filter((b) => b.userId === userId).map(clone);
     },
 
+    async listBookingsByStatus(status) {
+      return [...bookings.values()].filter((b) => b.status === status).map(clone);
+    },
+
+    /** Compare-and-set plus seat release, atomic in this single process. */
+    async cancelBookingWithRelease({ id, from, to, cancelledAt, refundCents, refundedAt, refundId }) {
+      const booking = bookings.get(id);
+      if (!booking) return null;
+      if (booking.status !== from) {
+        return { conflict: true, booking: clone(booking) };
+      }
+      const tier = tiers.get(booking.tierId);
+      if (!tier || tier.sold < booking.quantity) {
+        fail("INVALID_STATE", "Could not release seats for this booking");
+      }
+      tier.sold -= booking.quantity;
+      booking.status = to;
+      booking.cancelledAt = cancelledAt;
+      booking.refundCents = refundCents;
+      booking.refundedAt = refundedAt;
+      booking.refundId = refundId;
+      return { booking: clone(booking) };
+    },
+
     /**
      * Atomically reserve seats. If not enough seats, throw SOLD_OUT.
-     * Synchronous critical section for in-process safety.
      */
     async reserveSeats(tierId, quantity) {
       const tier = tiers.get(tierId);
@@ -171,6 +204,52 @@ export function createMemoryRepository() {
       if (!tier) fail("NOT_FOUND", `tier not found: ${tierId}`);
       tier.sold = Math.max(0, tier.sold - quantity);
       return clone(tier);
+    },
+
+    // --- Build 8 waitlist -------------------------------------------------
+    async createWaitlistEntry(data) {
+      const entry = {
+        id: newId(),
+        tierId: data.tierId,
+        userId: data.userId,
+        quantity: data.quantity ?? 1,
+        status: data.status ?? "waiting",
+        createdAt: data.createdAt || new Date().toISOString(),
+        offerExpiresAt: data.offerExpiresAt,
+      };
+      waitlist.set(entry.id, entry);
+      return clone(entry);
+    },
+
+    async getWaitlistEntryById(id) {
+      return clone(waitlist.get(id));
+    },
+
+    async listWaitlistEntries(filters = {}) {
+      return [...waitlist.values()]
+        .filter((entry) => {
+          if (filters.tierId !== undefined && entry.tierId !== filters.tierId) return false;
+          if (filters.userId !== undefined && entry.userId !== filters.userId) return false;
+          if (filters.status !== undefined && entry.status !== filters.status) return false;
+          return true;
+        })
+        .map(clone);
+    },
+
+    async saveWaitlistEntry(entry) {
+      const stored = clone(entry);
+      waitlist.set(stored.id, stored);
+      return clone(stored);
+    },
+
+    async compareAndSetWaitlistStatus(id, from, to, patch = {}) {
+      const entry = waitlist.get(id);
+      if (!entry || entry.status !== from) return null;
+      entry.status = to;
+      if (patch.offerExpiresAt !== undefined) entry.offerExpiresAt = patch.offerExpiresAt;
+      if (patch.expiredAt !== undefined) entry.expiredAt = patch.expiredAt;
+      if (patch.acceptedBookingId !== undefined) entry.acceptedBookingId = patch.acceptedBookingId;
+      return clone(entry);
     },
   };
 }

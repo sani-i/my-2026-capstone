@@ -7,7 +7,11 @@ import { createSqliteRepository } from "./repositories/sqlite.js";
 import { createEventService } from "./services/eventService.js";
 import { createBookingService } from "./services/bookingService.js";
 import { createAuthService } from "./services/authService.js";
+import { createSeatService } from "./services/seatService.js";
+import { createWaitlistService } from "./services/waitlistService.js";
 import { createMockPaymentGateway } from "./lib/mockPaymentGateway.js";
+import { createClock } from "./lib/clock.js";
+import { createMaintenanceJob } from "./jobs/maintenance.js";
 import { registerApiRoutes } from "./http/routes.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { createDatabase } from "./db/connection.js";
@@ -20,17 +24,21 @@ const dbPath = path.resolve(__dirname, "..", config.dbPath);
 const schemaSql = fs.readFileSync(schemaPath, "utf8");
 const db = createDatabase(dbPath, schemaSql);
 
+const clock = createClock();
 const repo = createSqliteRepository(db);
 const paymentGateway = createMockPaymentGateway();
 const eventService = createEventService(repo);
-const bookingService = createBookingService(repo, paymentGateway);
+const seatService = createSeatService(repo, { clock });
+const bookingService = createBookingService(repo, paymentGateway, { clock, seatService });
+const waitlistService = createWaitlistService(repo, { clock, seatService, bookingService });
 const authService = createAuthService(repo);
+const maintenance = createMaintenanceJob({ bookingService, seatService });
 
 const { server } = createApp({
   publicDir,
   registerRoutes(router, helpers) {
     registerAuthRoutes(router, { authService });
-    registerApiRoutes(router, { ...helpers, eventService, bookingService });
+    registerApiRoutes(router, { ...helpers, eventService, bookingService, waitlistService });
   },
 });
 
@@ -40,4 +48,9 @@ server.listen(config.port, () => {
   if (!process.env.AUTH_SECRET && process.env.NODE_ENV !== "production") {
     console.log("Using development token secret. Set AUTH_SECRET before deploying.");
   }
+  // Every minute: expire unpaid holds, then pass freed seats down the waitlist.
+  maintenance.start();
+  console.log("Maintenance job started (every 60s).");
 });
+
+server.on("close", () => maintenance.stop());
