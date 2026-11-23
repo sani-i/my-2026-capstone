@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   refund_cents INTEGER,
   refunded_at TEXT,
   refund_id TEXT,
+  checked_in_at TEXT,
+  checked_in_by TEXT,
   FOREIGN KEY (event_id) REFERENCES events(id),
   FOREIGN KEY (tier_id) REFERENCES ticket_tiers(id),
   FOREIGN KEY (user_id) REFERENCES users(id)

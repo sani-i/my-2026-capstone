@@ -102,6 +102,15 @@ export function getCancelQuote(reference) {
   return request(`/bookings/${encodeURIComponent(reference)}/cancel-quote`, { auth: true });
 }
 
+// --- Build 9 signed ticket + staff check-in ---
+export function getTicket(reference) {
+  return request(`/bookings/${encodeURIComponent(reference)}/ticket`, { auth: true });
+}
+
+export function checkIn(input) {
+  return request("/checkin", { method: "POST", body: input, auth: true });
+}
+
 // --- Build 8 waitlist ---
 export function joinWaitlist(input) {
   return request("/waitlist", { method: "POST", body: input, auth: true });

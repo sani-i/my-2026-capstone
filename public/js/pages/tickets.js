@@ -2,12 +2,14 @@ import {
   acceptWaitlistOffer,
   cancelBooking,
   getCancelQuote,
+  getTicket,
   listMyBookings,
   listMyWaitlist,
   pay,
 } from "../api.js";
 import { requireLogin } from "../session.js";
 import { clear, el, formatCents } from "../ui.js";
+import { createQrCode } from "../qr.js";
 
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("bookings-list");
@@ -113,8 +115,72 @@ if (requireLogin()) {
     return actions;
   }
 
+  /** Build 9: draw the signed ticket code as a crisp SVG QR code. */
+  function renderQrSvg(code) {
+    const { size, modules } = createQrCode(code);
+    const quiet = 4;
+    const dimension = size + quiet * 2;
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", `0 0 ${dimension} ${dimension}`);
+    svg.setAttribute("width", "220");
+    svg.setAttribute("height", "220");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Signed ticket QR code");
+    svg.setAttribute("shape-rendering", "crispEdges");
+
+    const background = document.createElementNS(ns, "rect");
+    background.setAttribute("x", "0");
+    background.setAttribute("y", "0");
+    background.setAttribute("width", String(dimension));
+    background.setAttribute("height", String(dimension));
+    background.setAttribute("fill", "#ffffff");
+    svg.append(background);
+
+    const segments = [];
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        if (modules[y][x]) {
+          segments.push(`M${x + quiet},${y + quiet}h1v1h-1z`);
+        }
+      }
+    }
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", segments.join(" "));
+    path.setAttribute("fill", "#111827");
+    svg.append(path);
+    return svg;
+  }
+
+  async function loadTicketQr(booking, slot) {
+    if (!["paid", "checked_in"].includes(booking.status)) return;
+    try {
+      const ticket = await getTicket(booking.reference);
+      clear(slot);
+      slot.className = "qr-card";
+      slot.append(
+        el("h3", {}, ["Your QR ticket"]),
+        renderQrSvg(ticket.code),
+        el("p", { className: "meta" }, [
+          "The code contains only a signed booking reference, never your name or email.",
+        ]),
+      );
+      if (ticket.status === "checked_in") {
+        slot.append(el("p", { className: "success-msg" }, [
+          `Checked in at ${ticket.checkedInAt || "a previous scan"}.`,
+        ]));
+      }
+    } catch (err) {
+      clear(slot);
+      slot.append(el("p", { className: "error-msg" }, [
+        err?.message || "Could not load your QR ticket.",
+      ]));
+    }
+  }
+
   function renderBooking(booking) {
     const confirmSlot = el("div", { className: "cancel-slot" });
+    const qrSlot = el("div", { className: "qr-slot" });
     return el("article", { className: "card ticket" }, [
       el("h2", {}, [booking.reference]),
       el("p", { className: "meta" }, [`Event: ${booking.eventId}`]),
@@ -126,8 +192,16 @@ if (requireLogin()) {
         el("span", { className: `badge status-${booking.status}` }, [booking.status]),
       ]),
       renderActions(booking, confirmSlot),
+      qrSlot,
       confirmSlot,
     ]);
+  }
+
+  function renderBookingWithQr(booking) {
+    const card = renderBooking(booking);
+    const qrSlot = card.querySelector(".qr-slot");
+    if (qrSlot) loadTicketQr(booking, qrSlot);
+    return card;
   }
 
   function countdownText(offerExpiresAt) {
@@ -230,7 +304,7 @@ if (requireLogin()) {
       if (!bookings.length) {
         listEl.append(el("p", { className: "muted" }, ["You have no bookings yet."]));
       } else {
-        for (const booking of bookings) listEl.append(renderBooking(booking));
+        for (const booking of bookings) listEl.append(renderBookingWithQr(booking));
       }
       setStatus(`${bookings.length} booking(s).`);
     } catch (err) {

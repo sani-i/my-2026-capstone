@@ -7,6 +7,8 @@ import { createBookingService } from "../src/services/bookingService.js";
 import { createAuthService } from "../src/services/authService.js";
 import { createSeatService } from "../src/services/seatService.js";
 import { createWaitlistService } from "../src/services/waitlistService.js";
+import { createCheckinService } from "../src/services/checkinService.js";
+import { createRateLimiter } from "../src/lib/rateLimit.js";
 import { createMockPaymentGateway } from "../src/lib/mockPaymentGateway.js";
 import { createClock } from "../src/lib/clock.js";
 import { createMaintenanceJob } from "../src/jobs/maintenance.js";
@@ -18,7 +20,7 @@ export const publicDir = path.resolve(__dirname, "../public");
 
 export async function withApi(
   run,
-  { paymentGateway: customGateway, clock = createClock() } = {},
+  { paymentGateway: customGateway, clock = createClock(), rateLimiters: customRateLimiters = {} } = {},
 ) {
   const repo = createMemoryRepository();
   const paymentGateway = customGateway || createMockPaymentGateway();
@@ -27,10 +29,17 @@ export async function withApi(
   const bookingService = createBookingService(repo, paymentGateway, { clock, seatService });
   const waitlistService = createWaitlistService(repo, { clock, seatService, bookingService });
   const authService = createAuthService(repo);
+  const checkinService = createCheckinService(repo, { clock });
   const maintenance = createMaintenanceJob({ bookingService, seatService });
+  const rateLimiters = {
+    "POST /api/auth/login": createRateLimiter({ max: 1000, windowMs: 60 * 1000 }),
+    "POST /api/checkin": createRateLimiter({ max: 1000, windowMs: 60 * 1000 }),
+    ...customRateLimiters,
+  };
 
   const { server } = createApp({
     publicDir,
+    rateLimiters,
     registerRoutes(router, helpers) {
       registerAuthRoutes(router, { authService });
       registerApiRoutes(router, {
@@ -38,6 +47,7 @@ export async function withApi(
         eventService,
         bookingService,
         waitlistService,
+        checkinService,
       });
     },
   });
@@ -45,7 +55,17 @@ export async function withApi(
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   try {
-    await run({ baseUrl, repo, clock, maintenance, bookingService, seatService, waitlistService });
+    await run({
+      baseUrl,
+      repo,
+      clock,
+      maintenance,
+      bookingService,
+      seatService,
+      waitlistService,
+      checkinService,
+      rateLimiters,
+    });
   } finally {
     await new Promise((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),

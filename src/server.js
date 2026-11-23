@@ -9,6 +9,8 @@ import { createBookingService } from "./services/bookingService.js";
 import { createAuthService } from "./services/authService.js";
 import { createSeatService } from "./services/seatService.js";
 import { createWaitlistService } from "./services/waitlistService.js";
+import { createCheckinService } from "./services/checkinService.js";
+import { createRateLimiter } from "./lib/rateLimit.js";
 import { createMockPaymentGateway } from "./lib/mockPaymentGateway.js";
 import { createClock } from "./lib/clock.js";
 import { createMaintenanceJob } from "./jobs/maintenance.js";
@@ -32,13 +34,28 @@ const seatService = createSeatService(repo, { clock });
 const bookingService = createBookingService(repo, paymentGateway, { clock, seatService });
 const waitlistService = createWaitlistService(repo, { clock, seatService, bookingService });
 const authService = createAuthService(repo);
+const checkinService = createCheckinService(repo, { clock });
 const maintenance = createMaintenanceJob({ bookingService, seatService });
+
+// Separate buckets: a busy door must not lock attendees out of login.
+const loginLimiter = createRateLimiter({ max: 10, windowMs: 60 * 1000 });
+const checkinLimiter = createRateLimiter({ max: 30, windowMs: 60 * 1000 });
 
 const { server } = createApp({
   publicDir,
+  rateLimiters: {
+    "POST /api/auth/login": loginLimiter,
+    "POST /api/checkin": checkinLimiter,
+  },
   registerRoutes(router, helpers) {
     registerAuthRoutes(router, { authService });
-    registerApiRoutes(router, { ...helpers, eventService, bookingService, waitlistService });
+    registerApiRoutes(router, {
+      ...helpers,
+      eventService,
+      bookingService,
+      waitlistService,
+      checkinService,
+    });
   },
 });
 
@@ -47,6 +64,9 @@ server.listen(config.port, () => {
   console.log(`Database: ${dbPath}`);
   if (!process.env.AUTH_SECRET && process.env.NODE_ENV !== "production") {
     console.log("Using development token secret. Set AUTH_SECRET before deploying.");
+  }
+  if (!process.env.TICKET_SECRET && process.env.NODE_ENV !== "production") {
+    console.log("Using development ticket secret. Set TICKET_SECRET before deploying.");
   }
   // Every minute: expire unpaid holds, then pass freed seats down the waitlist.
   maintenance.start();

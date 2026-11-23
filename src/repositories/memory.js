@@ -127,6 +127,8 @@ export function createMemoryRepository() {
         refundCents: data.refundCents,
         refundedAt: data.refundedAt,
         refundId: data.refundId,
+        checkedInAt: data.checkedInAt,
+        checkedInBy: data.checkedInBy,
       };
       bookings.set(booking.id, booking);
       bookingsByReference.set(booking.reference, booking.id);
@@ -179,6 +181,22 @@ export function createMemoryRepository() {
       booking.refundCents = refundCents;
       booking.refundedAt = refundedAt;
       booking.refundId = refundId;
+      return { booking: clone(booking) };
+    },
+
+    /**
+     * Build 9: compare-and-set check-in. The time is written in the same
+     * operation as the status change, so a loser sees the winner's timestamp.
+     */
+    async checkInBookingWithCas({ id, from, to, checkedInAt, checkedInBy }) {
+      const booking = bookings.get(id);
+      if (!booking) return null;
+      if (booking.status !== from) {
+        return { conflict: true, booking: clone(booking) };
+      }
+      booking.status = to;
+      booking.checkedInAt = checkedInAt;
+      booking.checkedInBy = checkedInBy;
       return { booking: clone(booking) };
     },
 

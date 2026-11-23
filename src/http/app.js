@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createRouter } from "./router.js";
+import { applySecurityHeaders } from "./securityHeaders.js";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -34,7 +35,15 @@ const ERROR_STATUS = {
   ALREADY_ON_WAITLIST: 409,
   OFFER_EXPIRED: 409,
   REFUND_FAILED: 409,
+  INVALID_TICKET: 400,
+  DUPLICATE_CHECKIN: 409,
+  WRONG_EVENT: 409,
+  RATE_LIMITED: 429,
 };
+
+function defaultClientKey(req) {
+  return String(req.socket?.remoteAddress || "unknown");
+}
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
@@ -45,8 +54,8 @@ function sendJson(res, status, body) {
   res.end(payload);
 }
 
-function sendError(res, status, code, message) {
-  sendJson(res, status, { error: { code, message } });
+function sendError(res, status, code, message, details) {
+  sendJson(res, status, { error: { code, message, ...(details || {}) } });
 }
 
 async function readBody(req) {
@@ -121,7 +130,12 @@ async function serveStatic(req, res, publicDir) {
   }
 }
 
-export function createApp({ publicDir = path.resolve("public"), registerRoutes } = {}) {
+export function createApp({
+  publicDir = path.resolve("public"),
+  registerRoutes,
+  rateLimiters = {},
+  clientKey = defaultClientKey,
+} = {}) {
   const router = createRouter();
 
   router.add("GET", "/health", async (_req, res) => {
@@ -133,9 +147,24 @@ export function createApp({ publicDir = path.resolve("public"), registerRoutes }
   }
 
   const server = http.createServer(async (req, res) => {
+    applySecurityHeaders(res);
     try {
       const url = new URL(req.url || "/", "http://localhost");
       const pathname = url.pathname;
+
+      // Build 9: key rate limits by route + client IP. Login and check-in get
+      // separate limiters so a busy door cannot lock out attendees logging in.
+      const method = String(req.method || "GET").toUpperCase();
+      const limiter = rateLimiters[`${method} ${pathname}`];
+      if (limiter && typeof limiter.consume === "function") {
+        const decision = limiter.consume(clientKey(req));
+        if (!decision.allowed) {
+          const seconds = Math.max(1, Math.ceil((decision.retryAfterMs || 1000) / 1000));
+          res.setHeader("Retry-After", String(seconds));
+          sendError(res, 429, "RATE_LIMITED", "Too many attempts. Try again shortly.");
+          return;
+        }
+      }
 
       let body;
       try {
@@ -174,7 +203,11 @@ export function createApp({ publicDir = path.resolve("public"), registerRoutes }
       const code = typeof err?.code === "string" ? err.code : "INTERNAL_ERROR";
       const status = ERROR_STATUS[code] ?? (Number.isInteger(err?.status) ? err.status : 500);
       const message = status >= 500 ? "Internal server error" : String(err?.message || "Error");
-      sendError(res, status, code, message);
+      const details = {};
+      for (const key of ["checkedInAt", "reference"]) {
+        if (err?.[key] !== undefined) details[key] = err[key];
+      }
+      sendError(res, status, code, message, details);
     }
   });
 

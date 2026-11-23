@@ -80,4 +80,11 @@ button.danger:hover:not(:disabled) { background: #8a1a12; }
 .badge.status-pending { background: var(--warn-bg); color: #7a5600; }
 .badge.status-cancelled, .badge.status-refunded { background: #eceff1; color: #37474f; }
 h4 { margin: 1rem 0 0.5rem; }
+.qr-card { margin-top: 1rem; padding: 1rem; border: 1px dashed var(--primary); border-radius: var(--radius); background: #fff; }
+.qr-card svg { display: block; margin: 0.75rem 0; max-width: 100%; height: auto; }
+.qr-slot:empty { display: none; }
+.checkin-result { margin-top: 1rem; }
+.checkin-result.success { border-color: var(--success); background: var(--success-bg); }
+.checkin-result.error { border-color: var(--danger); background: var(--danger-bg); }
+textarea { padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: #fff; width: 100%; resize: vertical; }
 @media (max-width: 600px) { .header-row { flex-direction: column; align-items: flex-start; } }

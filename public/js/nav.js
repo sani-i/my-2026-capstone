@@ -10,6 +10,7 @@ export function mountNav() {
   const user = currentUser();
   if (isLoggedIn() && user) {
     slot.append(
+      ...(user.role === "staff" ? [el("a", { href: "/checkin.html" }, ["Check-in"])] : []),
       el("span", { className: "nav-user" }, [`${user.email} · ${user.role}`]),
       el(
         "a",

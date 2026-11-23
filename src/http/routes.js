@@ -8,7 +8,10 @@ function queryToObject(searchParams) {
   return obj;
 }
 
-export function registerApiRoutes(router, { eventService, bookingService, waitlistService }) {
+export function registerApiRoutes(
+  router,
+  { eventService, bookingService, waitlistService, checkinService },
+) {
   // Public reads: browsing events needs no login.
   router.add("GET", "/api/events", async (_req, _res, ctx) => {
     const events = await eventService.searchEvents(queryToObject(ctx.query));
@@ -72,6 +75,13 @@ export function registerApiRoutes(router, { eventService, bookingService, waitli
     ctx.sendJson(200, quote);
   });
 
+  // Build 9: signed QR code for a paid booking. Only the booking owner can get it.
+  router.add("GET", "/api/bookings/:reference/ticket", async (req, _res, ctx) => {
+    const user = requireUser(req);
+    const ticket = await checkinService.getTicket(ctx.params.reference, user);
+    ctx.sendJson(200, ticket);
+  });
+
   router.add("GET", "/api/bookings/:reference", async (req, _res, ctx) => {
     const user = requireUser(req);
     const booking = await bookingService.getBooking(ctx.params.reference, user);
@@ -92,6 +102,13 @@ export function registerApiRoutes(router, { eventService, bookingService, waitli
     const user = requireUser(req);
     const booking = await bookingService.cancelBooking(ctx.params.reference, user);
     ctx.sendJson(200, booking);
+  });
+
+  // --- Build 9 staff check-in -------------------------------------------
+  router.add("POST", "/api/checkin", async (req, _res, ctx) => {
+    const user = requireRole(requireUser(req), "staff");
+    const result = await checkinService.checkIn(ctx.body ?? {}, user);
+    ctx.sendJson(200, result);
   });
 
   // --- Build 8 waitlist --------------------------------------------------

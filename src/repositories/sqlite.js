@@ -46,6 +46,8 @@ function rowToBooking(row) {
     refundCents: row.refund_cents ?? undefined,
     refundedAt: row.refunded_at ?? undefined,
     refundId: row.refund_id ?? undefined,
+    checkedInAt: row.checked_in_at ?? undefined,
+    checkedInBy: row.checked_in_by ?? undefined,
   };
 }
 
@@ -118,8 +120,8 @@ export function createSqliteRepository(db) {
     `INSERT INTO bookings (
       id, reference, event_id, tier_id, user_id, quantity, amount_cents, status,
       created_at, hold_expires_at, paid_at, cancelled_at, charge_id,
-      refund_cents, refunded_at, refund_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      refund_cents, refunded_at, refund_id, checked_in_at, checked_in_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const getBookingByIdStmt = db.prepare("SELECT * FROM bookings WHERE id = ?");
   const getBookingByRefStmt = db.prepare("SELECT * FROM bookings WHERE reference = ?");
@@ -134,12 +136,19 @@ export function createSqliteRepository(db) {
     `UPDATE bookings
      SET event_id = ?, tier_id = ?, user_id = ?, quantity = ?, amount_cents = ?, status = ?,
          created_at = ?, hold_expires_at = ?, paid_at = ?, cancelled_at = ?, charge_id = ?,
-         refund_cents = ?, refunded_at = ?, refund_id = ?
+         refund_cents = ?, refunded_at = ?, refund_id = ?, checked_in_at = ?, checked_in_by = ?
      WHERE id = ?`,
   );
   const cancelBookingStmt = db.prepare(
     `UPDATE bookings
      SET status = ?, cancelled_at = ?, refund_cents = ?, refunded_at = ?, refund_id = ?
+     WHERE id = ? AND status = ?`,
+  );
+  // Build 9: one conditional UPDATE admits exactly one scanner. The timestamp
+  // is written in the same statement, so a loser can read the winner's time.
+  const checkInStmt = db.prepare(
+    `UPDATE bookings
+     SET status = ?, checked_in_at = ?, checked_in_by = ?
      WHERE id = ? AND status = ?`,
   );
 
@@ -337,6 +346,8 @@ export function createSqliteRepository(db) {
         refundCents: data.refundCents,
         refundedAt: data.refundedAt,
         refundId: data.refundId,
+        checkedInAt: data.checkedInAt,
+        checkedInBy: data.checkedInBy,
       };
       insertBooking.run(
         booking.id,
@@ -355,6 +366,8 @@ export function createSqliteRepository(db) {
         booking.refundCents ?? null,
         booking.refundedAt ?? null,
         booking.refundId ?? null,
+        booking.checkedInAt ?? null,
+        booking.checkedInBy ?? null,
       );
       return booking;
     },
@@ -384,6 +397,8 @@ export function createSqliteRepository(db) {
         booking.refundCents ?? null,
         booking.refundedAt ?? null,
         booking.refundId ?? null,
+        booking.checkedInAt ?? null,
+        booking.checkedInBy ?? null,
         booking.id,
       );
       return rowToBooking(getBookingByIdStmt.get(booking.id));
@@ -407,6 +422,20 @@ export function createSqliteRepository(db) {
      */
     async cancelBookingWithRelease(input) {
       return cancelWithRelease(input);
+    },
+
+    /**
+     * Build 9: one conditional UPDATE with the check-in time baked in.
+     * A loser gets the booking as it stands so it can report the first scan.
+     */
+    async checkInBookingWithCas({ id, from, to, checkedInAt, checkedInBy }) {
+      const before = getBookingByIdStmt.get(id);
+      if (!before) return null;
+      const result = checkInStmt.run(to, checkedInAt, checkedInBy, id, from);
+      if (result.changes === 0) {
+        return { conflict: true, booking: rowToBooking(getBookingByIdStmt.get(id)) };
+      }
+      return { booking: rowToBooking(getBookingByIdStmt.get(id)) };
     },
 
     /**

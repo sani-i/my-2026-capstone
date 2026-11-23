@@ -16,6 +16,8 @@ const COLUMN_MIGRATIONS = [
   ["bookings", "refund_cents", "ALTER TABLE bookings ADD COLUMN refund_cents INTEGER"],
   ["bookings", "refunded_at", "ALTER TABLE bookings ADD COLUMN refunded_at TEXT"],
   ["bookings", "refund_id", "ALTER TABLE bookings ADD COLUMN refund_id TEXT"],
+  ["bookings", "checked_in_at", "ALTER TABLE bookings ADD COLUMN checked_in_at TEXT"],
+  ["bookings", "checked_in_by", "ALTER TABLE bookings ADD COLUMN checked_in_by TEXT"],
 ];
 
 function hasColumn(db, table, column) {

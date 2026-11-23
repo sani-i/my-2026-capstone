@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Ticketing - Staff check-in</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="/index.html">Event Ticketing</a>
+        <nav aria-label="Main navigation">
+          <a href="/index.html">Events</a>
+          <a href="/tickets.html">My tickets</a>
+          <a href="/organizer.html">Organizer</a>
+          <a href="/checkin.html">Check-in</a>
+          <span id="nav-auth" class="nav-auth"></span>
+        </nav>
+      </div>
+    </header>
+    <main class="container narrow">
+      <h1>Staff check-in</h1>
+      <p class="muted">
+        Staff only. Paste the code from the attendee's QR ticket. Optionally choose the event
+        at the door so a ticket for another event is rejected.
+      </p>
+      <div id="gate" class="status" role="status" aria-live="polite"></div>
+      <form id="checkin-form" class="card">
+        <div class="field">
+          <label for="code">Ticket code</label>
+          <textarea id="code" name="code" rows="3" required placeholder="eyJyZWYiOi... .signature"></textarea>
+        </div>
+        <div class="field">
+          <label for="event-id">Event at the door (optional)</label>
+          <input id="event-id" name="eventId" type="text" placeholder="event id" />
+        </div>
+        <div class="actions">
+          <button id="scan-btn" type="submit">Check in</button>
+        </div>
+      </form>
+      <div id="result" class="checkin-result" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/js/pages/checkin.js"></script>
+    <script type="module" src="/js/nav.js"></script>
+  </body>
+</html>

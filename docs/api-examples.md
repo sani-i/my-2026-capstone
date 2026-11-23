@@ -1,15 +1,17 @@
-# API examples (Build 8)
+# API examples (Build 9)
 
 Every call the API supports, with `curl`, in the order you would use them:
 sign up, log in, create, publish, book, pay. Start the server first:
 
 ```bash
-AUTH_SECRET=a-long-random-secret-at-least-16-chars npm start
+AUTH_SECRET=a-long-random-login-secret-at-least-16-chars \
+TICKET_SECRET=a-different-random-ticket-secret-at-least-16-chars \
+npm start
 ```
 
-`AUTH_SECRET` is required when `NODE_ENV=production`. For local development a
-fixed development secret is used if the variable is missing (the server prints
-a warning). Data is stored in SQLite at `data/ticketing.db` and survives a
+Both secrets are required when `NODE_ENV=production` and must be different. For
+local development a fixed development value is used if either is missing (the
+server prints a warning). Data is stored in SQLite at `data/ticketing.db` and survives a
 restart; set `DATABASE_PATH` to use a different file.
 
 Login gives you a signed token. Put it in the `Authorization: Bearer` header on
@@ -41,6 +43,10 @@ Every error has the same shape:
 | `ALREADY_ON_WAITLIST` | 409 | The same attendee joined that tier's waitlist twice |
 | `OFFER_EXPIRED` | 409 | The 15-minute waitlist offer is over; the seat passed on |
 | `REFUND_FAILED` | 409 | The mock gateway refused the refund request |
+| `INVALID_TICKET` | 400 | Forged, malformed, cancelled or refunded QR code |
+| `DUPLICATE_CHECKIN` | 409 | That ticket was already checked in; `error.checkedInAt` has the first time |
+| `WRONG_EVENT` | 409 | The ticket belongs to a different event |
+| `RATE_LIMITED` | 429 | Too many login or check-in attempts; see `Retry-After` |
 
 ## 1. Sign up (anyone)
 
@@ -281,6 +287,43 @@ curl -s -X POST http://localhost:3000/api/waitlist/$ENTRY_ID/accept \
 is `pending`, so pay it with step 10. After the deadline the entry is `expired`,
 the seat is offered to the next person, and a late accept gives `409
 OFFER_EXPIRED`. A different attendee gets `403 FORBIDDEN`.
+
+## 16. Get the signed QR ticket (Build 9)
+
+Only the attendee who owns a `paid` (or already `checked_in`) booking can fetch
+its code. The code contains only `{ ref, iat }`, signed with `TICKET_SECRET`, so
+it is safe to print in a QR code.
+
+```bash
+curl -s http://localhost:3000/api/bookings/$REF/ticket \
+  -H "Authorization: Bearer $ATTENDEE_TOKEN"
+```
+
+`200` with:
+
+```json
+{ "code": "eyJyZWYiOi...signature", "reference": "BK-XXXX-XXXX",
+  "eventId": "event-id", "status": "paid" }
+```
+
+A pending booking gives `409 INVALID_STATE`; another attendee gives `403 FORBIDDEN`.
+The browser draws `code` as a QR code on `/tickets.html` using `public/js/qr.js`.
+
+## 17. Staff check-in (Build 9)
+
+Sign up a `staff` user (step 1) and paste the ticket code. `eventId` is optional;
+when supplied, a ticket for another event gets `409 WRONG_EVENT`.
+
+```bash
+curl -s -X POST http://localhost:3000/api/checkin \
+  -H 'content-type: application/json' -H "Authorization: Bearer $STAFF_TOKEN" \
+  -d "{\"code\":\"$TICKET_CODE\",\"eventId\":\"$EVENT_ID\"}"
+```
+
+`200` means admitted, with `checkedInAt` and `checkedInBy`. Repeats give `409
+DUPLICATE_CHECKIN` plus the first scan time. Edited codes give `400
+INVALID_TICKET`; an attendee token gives `403 FORBIDDEN`. The status change is a
+single conditional UPDATE, so two simultaneous scans admit exactly one ticket.
 
 ## Health check
 
