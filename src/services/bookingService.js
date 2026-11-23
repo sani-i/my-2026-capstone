@@ -52,25 +52,28 @@ export function createBookingService(repo, paymentGateway) {
       fail("INVALID_STATE", "cannot book tickets for an unpublished event");
     }
 
-    const remaining = tier.capacity - tier.sold;
-    if (quantity > remaining) {
-      fail(
-        "SOLD_OUT",
-        `Only ${remaining} ticket(s) left in ${tier.name}`,
-      );
+    // Build 5: atomic reservation in the database/repo. No read-check-write.
+    await repo.reserveSeats(tierId, quantity);
+
+    let booking;
+    try {
+      booking = await repo.createBooking({
+        eventId: event.id,
+        tierId: tier.id,
+        userId: uid,
+        quantity,
+        amountCents: tier.priceCents * quantity,
+        status: "pending",
+      });
+    } catch (err) {
+      // If booking creation fails after seats reserved, release them.
+      try {
+        await repo.releaseSeats(tierId, quantity);
+      } catch {
+        // best effort release
+      }
+      throw err;
     }
-
-    tier.sold += quantity;
-    await repo.saveTier(tier);
-
-    const booking = await repo.createBooking({
-      eventId: event.id,
-      tierId: tier.id,
-      userId: uid,
-      quantity,
-      amountCents: tier.priceCents * quantity,
-      status: "pending",
-    });
     return booking;
   }
 
@@ -133,11 +136,7 @@ export function createBookingService(repo, paymentGateway) {
     // Transition pending -> cancelled
     assertTransition(booking.status, "cancelled");
 
-    const tier = await repo.getTierById(booking.tierId);
-    if (tier) {
-      tier.sold = Math.max(0, tier.sold - booking.quantity);
-      await repo.saveTier(tier);
-    }
+    await repo.releaseSeats(booking.tierId, booking.quantity);
 
     booking.status = "cancelled";
     booking.cancelledAt = new Date().toISOString();

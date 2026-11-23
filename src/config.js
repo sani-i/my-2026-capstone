@@ -7,4 +7,5 @@ function parsePort(value, fallback) {
 
 export const config = {
   port: parsePort(process.env.PORT, 3000),
+  dbPath: process.env.DATABASE_PATH || "data/ticketing.db",
 };

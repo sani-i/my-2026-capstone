@@ -1,4 +1,5 @@
 import { newId, newReference } from "../domain/ids.js";
+import { fail } from "../domain/errors.js";
 
 function clone(value) {
   return value === undefined ? value : structuredClone(value);
@@ -111,6 +112,31 @@ export function createMemoryRepository() {
 
     async listBookings() {
       return [...bookings.values()].map(clone);
+    },
+
+    /**
+     * Atomically reserve seats. If not enough seats, throw SOLD_OUT.
+     * Synchronous critical section for in-process safety.
+     */
+    async reserveSeats(tierId, quantity) {
+      const tier = tiers.get(tierId);
+      if (!tier) fail("NOT_FOUND", `tier not found: ${tierId}`);
+      const remaining = tier.capacity - tier.sold;
+      if (quantity > remaining) {
+        fail("SOLD_OUT", `Only ${remaining} ticket(s) left in ${tier.name}`);
+      }
+      tier.sold += quantity;
+      return clone(tier);
+    },
+
+    /**
+     * Release seats (used for cancellations).
+     */
+    async releaseSeats(tierId, quantity) {
+      const tier = tiers.get(tierId);
+      if (!tier) fail("NOT_FOUND", `tier not found: ${tierId}`);
+      tier.sold = Math.max(0, tier.sold - quantity);
+      return clone(tier);
     },
   };
 }
